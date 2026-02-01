@@ -3,6 +3,7 @@ module github.com/alwitt/haven
 go 1.25.5
 
 require (
+	github.com/alwitt/cgoutils v0.3.0
 	github.com/alwitt/goutils v0.10.0
 	github.com/apex/log v1.9.0
 	github.com/go-playground/validator/v10 v10.30.1
@@ -49,6 +50,7 @@ require (
 	github.com/prometheus/client_model v0.6.2 // indirect
 	github.com/prometheus/common v0.66.1 // indirect
 	github.com/prometheus/procfs v0.16.1 // indirect
+	github.com/stretchr/objx v0.5.2 // indirect
 	github.com/urfave/negroni v1.0.0 // indirect
 	go.opencensus.io v0.24.0 // indirect
 	go.opentelemetry.io/auto/sdk v1.1.0 // indirect
