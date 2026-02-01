@@ -192,29 +192,43 @@ func TestCryptoEngineChangeKeyState(t *testing.T) {
 	assert.Equal(testKey1.ID, newKey.ID)
 
 	// Deactivate key
+	inactiveTestKey1 := models.EncryptionKey{
+		ID:    uuid.NewString(),
+		State: models.EncryptionKeyStateInactive,
+	}
 	mockDatabase.On(
 		"MarkEncryptionKeyInactive",
 		mock.AnythingOfType("context.backgroundCtx"),
 		testKey1.ID,
-	).Run(func(_ mock.Arguments) {
-		testKey1.State = models.EncryptionKeyStateInactive
-	}).Return(nil).Once()
-	assert.Nil(uut1.MarkEncryptionKeyInactive(utCtx, testKey1.ID, mockDatabase))
-
-	// Activate key
-	mockDatabase.On(
-		"MarkEncryptionKeyActive",
-		mock.AnythingOfType("context.backgroundCtx"),
-		testKey1.ID,
-	).Run(func(_ mock.Arguments) {
-		testKey1.State = models.EncryptionKeyStateActive
-	}).Return(nil).Once()
+	).Return(nil).Once()
 	mockDatabase.On(
 		"GetEncryptionKey",
 		mock.AnythingOfType("context.backgroundCtx"),
 		testKey1.ID,
-	).Return(testKey1, nil).Once()
-	assert.Nil(uut1.MarkEncryptionKeyActive(utCtx, testKey1.ID, mockDatabase))
+	).Return(inactiveTestKey1, nil).Once()
+	theKey, err := uut1.MarkEncryptionKeyInactive(utCtx, testKey1.ID, mockDatabase)
+	assert.Nil(err)
+	assert.Equal(inactiveTestKey1, theKey)
+
+	// Activate key
+	activeTestKey1 := models.EncryptionKey{
+		ID:             uuid.NewString(),
+		State:          models.EncryptionKeyStateActive,
+		EncKeyMaterial: testKey1.EncKeyMaterial,
+	}
+	mockDatabase.On(
+		"MarkEncryptionKeyActive",
+		mock.AnythingOfType("context.backgroundCtx"),
+		testKey1.ID,
+	).Return(nil).Once()
+	mockDatabase.On(
+		"GetEncryptionKey",
+		mock.AnythingOfType("context.backgroundCtx"),
+		testKey1.ID,
+	).Return(activeTestKey1, nil).Once()
+	theKey, err = uut1.MarkEncryptionKeyActive(utCtx, testKey1.ID, mockDatabase)
+	assert.Nil(err)
+	assert.Equal(activeTestKey1, theKey)
 }
 
 func TestCryptoEngineDeleteKey(t *testing.T) {

@@ -15,6 +15,14 @@ import (
 	"github.com/go-playground/validator/v10"
 )
 
+// EncryptedData helper function to group encryption data together
+type EncryptedData struct {
+	// CipherText the cipher text
+	CipherText []byte
+	// Nonce the nonce
+	Nonce []byte
+}
+
 /*
 CryptographyEngine the system's cryptography engine. It is solely responsible for all
 cryptographic operations in the system.
@@ -67,8 +75,11 @@ type CryptographyEngine interface {
 			@param ctx context.Context - execution context
 			@param keyID string - the encryption key ID
 			@param activeDBClient Database - existing database transaction
+			@return key entry
 	*/
-	MarkEncryptionKeyActive(ctx context.Context, keyID string, activeDBClient db.Database) error
+	MarkEncryptionKeyActive(
+		ctx context.Context, keyID string, activeDBClient db.Database,
+	) (models.EncryptionKey, error)
 
 	/*
 		MarkEncryptionKeyInactive mark encryption key is inactive
@@ -76,8 +87,11 @@ type CryptographyEngine interface {
 			@param ctx context.Context - execution context
 			@param keyID string - the encryption key ID
 			@param activeDBClient Database - existing database transaction
+			@return key entry
 	*/
-	MarkEncryptionKeyInactive(ctx context.Context, keyID string, activeDBClient db.Database) error
+	MarkEncryptionKeyInactive(
+		ctx context.Context, keyID string, activeDBClient db.Database,
+	) (models.EncryptionKey, error)
 
 	/*
 		DeleteEncryptionKey delete encryption key
@@ -87,6 +101,35 @@ type CryptographyEngine interface {
 			@param activeDBClient Database - existing database transaction
 	*/
 	DeleteEncryptionKey(ctx context.Context, keyID string, activeDBClient db.Database) error
+
+	// ------------------------------------------------------------------------------------
+	// Data encryption
+
+	/*
+		EncryptData encrypt plain text
+
+			@param ctx context.Context - execution context
+			@param keyID string - the encryption key ID
+			@param plainText []byte - the plain text to encrypt
+			@param activeDBClient Database - existing database transaction
+			@return key entry for the encryption, and the cipher text
+	*/
+	EncryptData(
+		ctx context.Context, keyID string, plainText []byte, activeDBClient db.Database,
+	) (models.EncryptionKey, EncryptedData, error)
+
+	/*
+		DecryptData decrypt cipher text
+
+			@param ctx context.Context - execution context
+			@param keyID string - the encryption key ID
+			@param encrypted EncryptedData - the cipher text to decrypt
+			@param activeDBClient Database - existing database transaction
+			@return key entry for the encryption, and the cipher text
+	*/
+	DecryptData(
+		ctx context.Context, keyID string, encrypted EncryptedData, activeDBClient db.Database,
+	) (models.EncryptionKey, []byte, error)
 }
 
 // cryptoEngine implements CryptographyEngine
