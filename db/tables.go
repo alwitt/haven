@@ -1,6 +1,11 @@
 package db
 
-import "github.com/alwitt/haven/models"
+import (
+	"context"
+
+	"github.com/alwitt/haven/models"
+	"gorm.io/gorm"
+)
 
 // --------------------------------------------------------------------------------------
 // System audit events
@@ -62,4 +67,19 @@ type recordVersionEntry struct {
 // TableName hard code table name
 func (recordVersionEntry) TableName() string {
 	return "record_versions"
+}
+
+// --------------------------------------------------------------------------------------
+// Utility
+
+// DefineTables helper function meant to be used for unit-testing to prepare a
+// database with tables
+func DefineTables(_ context.Context, db *gorm.DB) error {
+	return db.AutoMigrate(
+		systemEventAuditEntry{},
+		systemParamsEntry{},
+		encryptionKeyEntry{},
+		recordEntry{},
+		recordVersionEntry{},
+	)
 }
