@@ -281,7 +281,7 @@ type databaseImpl struct {
 
 // newDatabase define a new database client
 func newDatabase(_ context.Context, sqlClient *gorm.DB) (Database, error) {
-	logTags := log.Fields{"module": "db", "component": "db-client"}
+	logTags := log.Fields{"package": "haven", "module": "db", "component": "db-client"}
 
 	instance := &databaseImpl{
 		Component: goutils.Component{

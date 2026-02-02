@@ -68,7 +68,7 @@ NewConnection define a new SQL client
 	@return new client
 */
 func NewConnection(dbDialector gorm.Dialector, dbLogLevel logger.LogLevel) (Client, error) {
-	logTags := log.Fields{"module": "db", "component": "sql-client"}
+	logTags := log.Fields{"package": "haven", "module": "db", "component": "sql-client"}
 
 	db, err := gorm.Open(dbDialector, &gorm.Config{
 		Logger:                 logger.Default.LogMode(dbLogLevel),

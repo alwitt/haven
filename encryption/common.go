@@ -186,7 +186,9 @@ func NewCryptographyEngine(
 		return nil, fmt.Errorf("failed to prepare core cryptography [%w]", err)
 	}
 
-	logTags := log.Fields{"module": "encryption", "component": "crypto-engine"}
+	logTags := log.Fields{
+		"package": "haven", "module": "encryption", "component": "crypto-engine",
+	}
 
 	instance := &cryptoEngine{
 		Component: goutils.Component{

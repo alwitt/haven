@@ -97,7 +97,7 @@ NewProtectedKVStore define new protected KV store
 func NewProtectedKVStore(
 	ctx context.Context, persistence db.Client, cryptoEngine encryption.CryptographyEngine,
 ) (ProtectedKVStore, error) {
-	logTags := log.Fields{"module": "store", "component": "protected-kv-store"}
+	logTags := log.Fields{"package": "haven", "module": "store", "component": "protected-kv-store"}
 
 	instance := &protectedKVStore{
 		Component: goutils.Component{
