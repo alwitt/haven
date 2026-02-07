@@ -10,62 +10,64 @@ import (
 // --------------------------------------------------------------------------------------
 // System audit events
 
-type systemEventAuditEntry struct {
+// SystemEventAuditDBEntry system audit event DB entry
+type SystemEventAuditDBEntry struct {
 	models.SystemEventAudit
 }
 
 // TableName hard code table name
-func (systemEventAuditEntry) TableName() string {
+func (SystemEventAuditDBEntry) TableName() string {
 	return "system_audit_events"
 }
 
 // --------------------------------------------------------------------------------------
 // System parameters
 
-type systemParamsEntry struct {
+// SystemParamsDBEntry system operating parameters DB entry
+type SystemParamsDBEntry struct {
 	models.SystemParams
 }
 
 // TableName hard code table name
-func (systemParamsEntry) TableName() string {
+func (SystemParamsDBEntry) TableName() string {
 	return "system_params"
 }
 
 // --------------------------------------------------------------------------------------
 // Encryption keys
 
-// encryptionKeyEntry encryption key DB entry
-type encryptionKeyEntry struct {
+// EncryptionKeyDBEntry encryption key DB entry
+type EncryptionKeyDBEntry struct {
 	models.EncryptionKey
 }
 
 // TableName hard code table name
-func (encryptionKeyEntry) TableName() string {
+func (EncryptionKeyDBEntry) TableName() string {
 	return "encryption_keys"
 }
 
 // --------------------------------------------------------------------------------------
 // Records
 
-// recordEntry key-value record DB entry
-type recordEntry struct {
+// RecordDBEntry key-value record DB entry
+type RecordDBEntry struct {
 	models.Record
 }
 
 // TableName hard code table name
-func (recordEntry) TableName() string {
+func (RecordDBEntry) TableName() string {
 	return "records"
 }
 
-// recordVersionEntry record value DB entry
-type recordVersionEntry struct {
+// RecordVersionDBEntry record value DB entry
+type RecordVersionDBEntry struct {
 	models.RecordVersion
-	Record recordEntry        `gorm:"constraint:OnDelete:CASCADE;foreignKey:RecordID" validate:"-"`
-	EncKey encryptionKeyEntry `gorm:"constraint:OnDelete:CASCADE;foreignKey:EncKeyID" validate:"-"`
+	Record RecordDBEntry        `gorm:"constraint:OnDelete:CASCADE;foreignKey:RecordID" validate:"-"`
+	EncKey EncryptionKeyDBEntry `gorm:"constraint:OnDelete:CASCADE;foreignKey:EncKeyID" validate:"-"`
 }
 
 // TableName hard code table name
-func (recordVersionEntry) TableName() string {
+func (RecordVersionDBEntry) TableName() string {
 	return "record_versions"
 }
 
@@ -76,10 +78,10 @@ func (recordVersionEntry) TableName() string {
 // database with tables
 func DefineTables(_ context.Context, db *gorm.DB) error {
 	return db.AutoMigrate(
-		systemEventAuditEntry{},
-		systemParamsEntry{},
-		encryptionKeyEntry{},
-		recordEntry{},
-		recordVersionEntry{},
+		SystemEventAuditDBEntry{},
+		SystemParamsDBEntry{},
+		EncryptionKeyDBEntry{},
+		RecordDBEntry{},
+		RecordVersionDBEntry{},
 	)
 }

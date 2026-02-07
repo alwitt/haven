@@ -16,7 +16,7 @@ func (d *databaseImpl) defineNewSystemEvent(
 	eventType models.SystemEventTypeENUMType, metadata interface{},
 ) (models.SystemEventAudit, error) {
 
-	newEntry := systemEventAuditEntry{
+	newEntry := SystemEventAuditDBEntry{
 		SystemEventAudit: models.SystemEventAudit{ID: ulid.Make().String(), EventType: eventType},
 	}
 
@@ -56,7 +56,7 @@ ListSystemEvents list captured system events
 func (d *databaseImpl) ListSystemEvents(
 	_ context.Context, filters SystemEventQueryFilter,
 ) ([]models.SystemEventAudit, error) {
-	query := d.db.Model(&systemEventAuditEntry{})
+	query := d.db.Model(&SystemEventAuditDBEntry{})
 
 	if len(filters.EventTypes) > 0 {
 		query = query.Where("type in ?", filters.EventTypes)
@@ -78,7 +78,7 @@ func (d *databaseImpl) ListSystemEvents(
 
 	query = query.Order("created_at")
 
-	var entries []systemEventAuditEntry
+	var entries []SystemEventAuditDBEntry
 	if tmp := query.Find(&entries); tmp.Error != nil {
 		return nil, fmt.Errorf("failed to list captured system events [%w]", tmp.Error)
 	}

@@ -1,0 +1,17 @@
+services:
+  haven-dev-db:
+    container_name: haven-dev-db
+    restart: unless-stopped
+    hostname: "postgres"
+    image: "postgres:18"
+    ports:
+      - 127.0.0.1:7432:5432
+    environment:
+      - POSTGRES_DB=postgres
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+    networks:
+      - haven-dev
+
+networks:
+  haven-dev:

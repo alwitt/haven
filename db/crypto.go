@@ -18,7 +18,7 @@ RecordEncryptionKey record an encrypted symmetric encryption key
 func (d *databaseImpl) RecordEncryptionKey(
 	_ context.Context, encKeyMaterial []byte,
 ) (models.EncryptionKey, error) {
-	newEntry := encryptionKeyEntry{
+	newEntry := EncryptionKeyDBEntry{
 		EncryptionKey: models.EncryptionKey{
 			ID:             uuid.NewString(),
 			EncKeyMaterial: encKeyMaterial,
@@ -49,8 +49,8 @@ func (d *databaseImpl) RecordEncryptionKey(
 }
 
 // getEncryptionKey fetch one encryption key
-func (d *databaseImpl) getEncryptionKey(keyID string) (encryptionKeyEntry, error) {
-	var entry encryptionKeyEntry
+func (d *databaseImpl) getEncryptionKey(keyID string) (EncryptionKeyDBEntry, error) {
+	var entry EncryptionKeyDBEntry
 	err := d.db.Where("id = ?", keyID).First(&entry).Error
 	return entry, err
 }
@@ -82,7 +82,7 @@ ListEncryptionKeys list encryption keys
 func (d *databaseImpl) ListEncryptionKeys(
 	_ context.Context, filters EncryptionKeyQueryFilter,
 ) ([]models.EncryptionKey, error) {
-	query := d.db.Model(&encryptionKeyEntry{})
+	query := d.db.Model(&EncryptionKeyDBEntry{})
 
 	if len(filters.TargetState) > 0 {
 		query = query.Where("state in ?", filters.TargetState)
@@ -97,7 +97,7 @@ func (d *databaseImpl) ListEncryptionKeys(
 
 	query = query.Order("created_at desc")
 
-	var entries []encryptionKeyEntry
+	var entries []EncryptionKeyDBEntry
 	if tmp := query.Find(&entries); tmp.Error != nil {
 		return nil, fmt.Errorf("failed to list encryption keys [%w]", tmp.Error)
 	}

@@ -13,22 +13,22 @@ const GlobalSystemParamEntryID = "system-parameters"
 // getSystemParamEntry fetch the system param entry
 //
 // If the entry does not exist, initialize a new one.
-func (d *databaseImpl) getSystemParamEntry() (systemParamsEntry, error) {
-	var entries []systemParamsEntry
+func (d *databaseImpl) getSystemParamEntry() (SystemParamsDBEntry, error) {
+	var entries []SystemParamsDBEntry
 	dbErr := d.db.Where("id = ?", GlobalSystemParamEntryID).Find(&entries).Error
 	if dbErr != nil {
-		return systemParamsEntry{}, fmt.Errorf("failed to read system params table [%w]", dbErr)
+		return SystemParamsDBEntry{}, fmt.Errorf("failed to read system params table [%w]", dbErr)
 	}
 	if len(entries) == 0 {
 		// Make a new one
-		newEntry := systemParamsEntry{
+		newEntry := SystemParamsDBEntry{
 			SystemParams: models.SystemParams{
 				ID:    GlobalSystemParamEntryID,
 				State: models.SystemStatePreInit,
 			},
 		}
 		if dbErr = d.db.Create(&newEntry).Error; dbErr != nil {
-			return systemParamsEntry{}, fmt.Errorf(
+			return SystemParamsDBEntry{}, fmt.Errorf(
 				"failed to setup singleton system params table [%w]", dbErr,
 			)
 		}

@@ -21,7 +21,7 @@ DefineNewRecord define new data record
 	@returns record entry
 */
 func (d *databaseImpl) DefineNewRecord(_ context.Context, name string) (models.Record, error) {
-	newEntry := recordEntry{
+	newEntry := RecordDBEntry{
 		Record: models.Record{
 			ID:   uuid.NewString(),
 			Name: name,
@@ -50,8 +50,8 @@ func (d *databaseImpl) DefineNewRecord(_ context.Context, name string) (models.R
 }
 
 // getRecordEntry find a data record by ID
-func (d *databaseImpl) getRecordEntry(recordID string) (recordEntry, error) {
-	var entry recordEntry
+func (d *databaseImpl) getRecordEntry(recordID string) (RecordDBEntry, error) {
+	var entry RecordDBEntry
 	err := d.db.Where("id = ?", recordID).First(&entry).Error
 	return entry, err
 }
@@ -84,7 +84,7 @@ GetRecordByName fetch a data record by name
 func (d *databaseImpl) GetRecordByName(
 	_ context.Context, recordName string,
 ) (models.Record, error) {
-	var entry recordEntry
+	var entry RecordDBEntry
 	if tmp := d.db.Where("name = ?", recordName).First(&entry); tmp.Error != nil {
 		return models.Record{}, fmt.Errorf("failed to fetch record '%s' [%w]", recordName, tmp.Error)
 	}
@@ -102,7 +102,7 @@ ListRecords list data records
 func (d *databaseImpl) ListRecords(
 	_ context.Context, filters RecordQueryFilter,
 ) ([]models.Record, error) {
-	query := d.db.Model(&recordEntry{})
+	query := d.db.Model(&RecordDBEntry{})
 
 	if filters.Limit != nil {
 		query = query.Limit(*filters.Limit)
@@ -113,7 +113,7 @@ func (d *databaseImpl) ListRecords(
 
 	query = query.Order("created_at desc")
 
-	var entries []recordEntry
+	var entries []RecordDBEntry
 	if tmp := query.Find(&entries); tmp.Error != nil {
 		return nil, fmt.Errorf("failed to list data records [%w]", tmp.Error)
 	}
@@ -178,7 +178,7 @@ func (d *databaseImpl) DefineNewVersionForRecord(
 	nonce []byte,
 	timestamp time.Time,
 ) (models.RecordVersion, error) {
-	newEntry := recordVersionEntry{
+	newEntry := RecordVersionDBEntry{
 		RecordVersion: models.RecordVersion{
 			ID:        ulid.Make().String(),
 			RecordID:  record.ID,
@@ -215,7 +215,7 @@ GetRecordVersion fetch a record version by ID
 func (d *databaseImpl) GetRecordVersion(
 	_ context.Context, versionID string,
 ) (models.RecordVersion, error) {
-	var entry recordVersionEntry
+	var entry RecordVersionDBEntry
 	if tmp := d.db.Where("id = ?", versionID).First(&entry); tmp.Error != nil {
 		return models.RecordVersion{}, fmt.Errorf(
 			"failed to fetch record version %s [%w]", versionID, tmp.Error,
@@ -235,7 +235,7 @@ ListAllRecordVersions list data record versions
 func (d *databaseImpl) ListAllRecordVersions(
 	_ context.Context, filters RecordVersionQueryFilter,
 ) ([]models.RecordVersion, error) {
-	query := d.db.Model(&recordVersionEntry{})
+	query := d.db.Model(&RecordVersionDBEntry{})
 
 	if filters.TargetRecordID != nil {
 		query = query.Where("record_id = ?", *filters.TargetRecordID)
@@ -254,7 +254,7 @@ func (d *databaseImpl) ListAllRecordVersions(
 
 	query = query.Order("created_at desc")
 
-	var entries []recordVersionEntry
+	var entries []RecordVersionDBEntry
 	if tmp := query.Find(&entries); tmp.Error != nil {
 		return nil, fmt.Errorf("failed to list data record versions [%w]", tmp.Error)
 	}

@@ -37,10 +37,25 @@ mock: ## Define support mocks
 
 .PHONY: up
 up: .prepare ## Start docker compose development stack
+	docker compose -f docker/docker-compose.yml up -d
 
 .PHONY: down
 down: .prepare ## Stop docker compose development stack
 	docker compose -f docker/docker-compose.yml down
+
+.PHONY: gen-migrate
+gen-migrate: ## Define new database migration
+	atlas schema inspect --env gorm --url "env://src"
+
+.PHONY: upload-migrate
+upload-migrate: ## Upload DB migration to Atlas Cloud
+	atlas migrate push haven --dev-url "docker://postgres/18/dev?search_path=public"
+
+.PHONY: dev-migrate
+dev-migrate: ## Test apply database migration to DEV Postgres
+	atlas migrate apply \
+	  --dir "atlas://haven" \
+	  --url "postgres://postgres:postgres@localhost:7432/postgres?search_path=public&sslmode=disable"
 
 .prepare: ## Prepare the project for local development
 	@pre-commit install
