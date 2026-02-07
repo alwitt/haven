@@ -1,0 +1,12 @@
+image: alwitt/cicd-support:cgoutils-0.1.0
+
+stages:
+  - test
+
+cicd:
+  stage: test
+
+  script:
+    - go fmt $(go list ./...)
+    - go vet $(go list ./...)
+    - go test --count 1 -v -timeout 600s -short ./...
