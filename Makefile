@@ -45,17 +45,26 @@ down: .prepare ## Stop docker compose development stack
 
 .PHONY: gen-migrate
 gen-migrate: ## Define new database migration
-	atlas schema inspect --env gorm --url "env://src"
-
-.PHONY: upload-migrate
-upload-migrate: ## Upload DB migration to Atlas Cloud
-	atlas migrate push haven --dev-url "docker://postgres/18/dev?search_path=public"
+	atlas migrate diff \
+	  --env gorm \
+	  --format '{{ sql . "  " }}'
 
 .PHONY: dev-migrate
 dev-migrate: ## Test apply database migration to DEV Postgres
 	atlas migrate apply \
-	  --dir "atlas://haven" \
+	  --env gorm \
 	  --url "postgres://postgres:postgres@localhost:7432/postgres?search_path=public&sslmode=disable"
+
+.PHONY: dev-docker-migrate
+dev-docker-migrate: ## Test apply database migration to DEV Postgres using docker image
+	docker run \
+	  --rm \
+	  -it \
+	  --network=docker_haven-dev \
+	  alwitt/haven-migration \
+	  migrate apply \
+	  --env gorm \
+	  --url "postgres://postgres:postgres@postgres:5432/postgres?search_path=public&sslmode=disable"
 
 .prepare: ## Prepare the project for local development
 	@pre-commit install
