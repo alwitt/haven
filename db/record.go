@@ -2,12 +2,15 @@ package db
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
+	"github.com/alwitt/goutils"
 	"github.com/alwitt/haven/models"
 	"github.com/google/uuid"
 	"github.com/oklog/ulid/v2"
+	"gorm.io/gorm"
 )
 
 // ======================================================================================
@@ -29,11 +32,15 @@ func (d *databaseImpl) DefineNewRecord(_ context.Context, name string) (models.R
 	}
 
 	if err := d.validator.Struct(&newEntry); err != nil {
-		return models.Record{}, fmt.Errorf("new record '%s' is not valid [%w]", name, err)
+		return models.Record{}, goutils.NewValidationError(
+			fmt.Sprintf("new record '%s' is not valid", name), err, true,
+		)
 	}
 
 	if tmp := d.db.Create(&newEntry); tmp.Error != nil {
-		return models.Record{}, fmt.Errorf("new record '%s' failed insert [%w]", name, tmp.Error)
+		return models.Record{}, models.NewSQLError(
+			fmt.Sprintf("new record '%s' failed insert", name), tmp.Error, true,
+		)
 	}
 
 	// Record this event
@@ -41,8 +48,8 @@ func (d *databaseImpl) DefineNewRecord(_ context.Context, name string) (models.R
 		models.SystemEventTypeAddNewRecord,
 		models.SystemEventDataRecordRelated{RecordID: newEntry.ID, RecordName: name},
 	); err != nil {
-		return models.Record{}, fmt.Errorf(
-			"failed to log add new record '%s' audit event [%w]", name, err,
+		return models.Record{}, goutils.NewRuntimeError(
+			fmt.Sprintf("failed to log add new record '%s' audit event", name), err, true,
 		)
 	}
 
@@ -52,8 +59,17 @@ func (d *databaseImpl) DefineNewRecord(_ context.Context, name string) (models.R
 // getRecordEntry find a data record by ID
 func (d *databaseImpl) getRecordEntry(recordID string) (RecordDBEntry, error) {
 	var entry RecordDBEntry
-	err := d.db.Where("id = ?", recordID).First(&entry).Error
-	return entry, err
+	if err := d.db.Where("id = ?", recordID).First(&entry).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return entry, goutils.NewNotFoundError(
+				fmt.Sprintf("record %s does not exist", recordID), err, true,
+			)
+		}
+		return entry, models.NewSQLError(
+			fmt.Sprintf("failed to fetch record %s", recordID), err, true,
+		)
+	}
+	return entry, nil
 }
 
 /*
@@ -68,7 +84,9 @@ func (d *databaseImpl) GetRecord(
 ) (models.Record, error) {
 	entry, err := d.getRecordEntry(recordID)
 	if err != nil {
-		return models.Record{}, fmt.Errorf("failed to fetch record %s [%w]", recordID, err)
+		return models.Record{}, goutils.NewRuntimeError(
+			fmt.Sprintf("failed to fetch record %s", recordID), err, true,
+		)
 	}
 
 	return entry.Record, nil
@@ -86,7 +104,14 @@ func (d *databaseImpl) GetRecordByName(
 ) (models.Record, error) {
 	var entry RecordDBEntry
 	if tmp := d.db.Where("name = ?", recordName).First(&entry); tmp.Error != nil {
-		return models.Record{}, fmt.Errorf("failed to fetch record '%s' [%w]", recordName, tmp.Error)
+		if errors.Is(tmp.Error, gorm.ErrRecordNotFound) {
+			return models.Record{}, goutils.NewNotFoundError(
+				fmt.Sprintf("record '%s' does not exist", recordName), tmp.Error, true,
+			)
+		}
+		return models.Record{}, models.NewSQLError(
+			fmt.Sprintf("failed to fetch record '%s'", recordName), tmp.Error, true,
+		)
 	}
 
 	return entry.Record, nil
@@ -115,7 +140,7 @@ func (d *databaseImpl) ListRecords(
 
 	var entries []RecordDBEntry
 	if tmp := query.Find(&entries); tmp.Error != nil {
-		return nil, fmt.Errorf("failed to list data records [%w]", tmp.Error)
+		return nil, models.NewSQLError("failed to list data records", tmp.Error, true)
 	}
 
 	result := []models.Record{}
@@ -135,11 +160,15 @@ DeleteRecord delete a data record
 func (d *databaseImpl) DeleteRecord(_ context.Context, recordID string) error {
 	entry, err := d.getRecordEntry(recordID)
 	if err != nil {
-		return fmt.Errorf("failed to fetch record %s [%w]", recordID, err)
+		return goutils.NewRuntimeError(
+			fmt.Sprintf("failed to fetch record %s", recordID), err, true,
+		)
 	}
 
 	if tmp := d.db.Delete(&entry); tmp.Error != nil {
-		return fmt.Errorf("failed to delete record %s [%w]", recordID, tmp.Error)
+		return models.NewSQLError(
+			fmt.Sprintf("failed to delete record %s", recordID), tmp.Error, true,
+		)
 	}
 
 	// Record this event
@@ -147,8 +176,8 @@ func (d *databaseImpl) DeleteRecord(_ context.Context, recordID string) error {
 		models.SystemEventTypeDeleteRecord,
 		models.SystemEventDataRecordRelated{RecordID: entry.ID, RecordName: entry.Name},
 	); err != nil {
-		return fmt.Errorf(
-			"failed to log delete record '%s' audit event [%w]", entry.Name, err,
+		return goutils.NewRuntimeError(
+			fmt.Sprintf("failed to log delete record '%s' audit event", entry.Name), err, true,
 		)
 	}
 
@@ -191,14 +220,14 @@ func (d *databaseImpl) DefineNewVersionForRecord(
 	}
 
 	if err := d.validator.Struct(&newEntry); err != nil {
-		return models.RecordVersion{}, fmt.Errorf(
-			"new version for record %s is invalid [%w]", record.ID, err,
+		return models.RecordVersion{}, goutils.NewValidationError(
+			fmt.Sprintf("new version for record %s is invalid", record.ID), err, true,
 		)
 	}
 
 	if tmp := d.db.Create(&newEntry); tmp.Error != nil {
-		return models.RecordVersion{}, fmt.Errorf(
-			"new version for record %s insert failed [%w]", record.ID, tmp.Error,
+		return models.RecordVersion{}, models.NewSQLError(
+			fmt.Sprintf("new version for record %s insert failed", record.ID), tmp.Error, true,
 		)
 	}
 
@@ -217,8 +246,13 @@ func (d *databaseImpl) GetRecordVersion(
 ) (models.RecordVersion, error) {
 	var entry RecordVersionDBEntry
 	if tmp := d.db.Where("id = ?", versionID).First(&entry); tmp.Error != nil {
-		return models.RecordVersion{}, fmt.Errorf(
-			"failed to fetch record version %s [%w]", versionID, tmp.Error,
+		if errors.Is(tmp.Error, gorm.ErrRecordNotFound) {
+			return models.RecordVersion{}, goutils.NewNotFoundError(
+				fmt.Sprintf("record version %s does not exist", versionID), tmp.Error, true,
+			)
+		}
+		return models.RecordVersion{}, models.NewSQLError(
+			fmt.Sprintf("failed to fetch record version %s", versionID), tmp.Error, true,
 		)
 	}
 
@@ -256,7 +290,7 @@ func (d *databaseImpl) ListAllRecordVersions(
 
 	var entries []RecordVersionDBEntry
 	if tmp := query.Find(&entries); tmp.Error != nil {
-		return nil, fmt.Errorf("failed to list data record versions [%w]", tmp.Error)
+		return nil, models.NewSQLError("failed to list data record versions", tmp.Error, true)
 	}
 
 	result := []models.RecordVersion{}

@@ -4,7 +4,6 @@ package encryption
 import (
 	"context"
 	"crypto/rsa"
-	"fmt"
 	"sync"
 
 	cgoCrypto "github.com/alwitt/cgoutils/crypto"
@@ -183,7 +182,7 @@ func NewCryptographyEngine(
 	})
 
 	if err != nil {
-		return nil, fmt.Errorf("failed to prepare core cryptography [%w]", err)
+		return nil, models.NewEncryptionError("failed to prepare core cryptography", err, true)
 	}
 
 	logTags := log.Fields{
@@ -204,17 +203,17 @@ func NewCryptographyEngine(
 		encKeys:      make(map[string]encKeyCacheEntry),
 	}
 	if err := models.RegisterWithValidator(instance.validator); err != nil {
-		return nil, fmt.Errorf("failed to install custom validation macros [%w]", err)
+		return nil, models.NewEncryptionError("failed to install custom validation macros", err, true)
 	}
 
 	// Load the primary RSA certificate and private key
 	if err := instance.validator.Struct(&params); err != nil {
-		return nil, fmt.Errorf("invalid engine init parameters [%w]", err)
+		return nil, goutils.NewValidationError("invalid engine init parameters", err, true)
 	}
 	if err := instance.loadRSAKeyPair(
 		ctx, params.PrimaryRSACertFile, params.PrimaryRSAKeyFile,
 	); err != nil {
-		return nil, fmt.Errorf("failed to load primary RSA key pair [%w]", err)
+		return nil, models.NewEncryptionError("failed to load primary RSA key pair", err, true)
 	}
 
 	return instance, nil

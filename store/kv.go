@@ -121,14 +121,14 @@ func NewProtectedKVStore(
 				dbClient,
 			)
 			if err != nil {
-				return fmt.Errorf("failed to list active encryption keys [%w]", err)
+				return models.NewPersistenceError("failed to list active encryption keys", err, true)
 			}
 
 			if len(activeKeys) == 0 {
 				// Make a new key
 				instance.workingKey, err = cryptoEngine.NewEncryptionKey(dbCtx, dbClient)
 				if err != nil {
-					return fmt.Errorf("failed to define new encryption key [%w]", err)
+					return models.NewPersistenceError("failed to define new encryption key", err, true)
 				}
 			} else {
 				// Use the newest key
@@ -138,7 +138,7 @@ func NewProtectedKVStore(
 			return nil
 		},
 	); dbErr != nil {
-		return nil, fmt.Errorf("failed to prepare working encryption key [%w]", dbErr)
+		return nil, models.NewKVStoreError("failed to prepare working encryption key", dbErr, true)
 	}
 
 	return instance, nil
@@ -170,14 +170,14 @@ func (s *protectedKVStore) RecordKeyValue(
 				// Make a new record
 				recordEntry, err = dbClient.DefineNewRecord(dbCtx, key)
 				if err != nil {
-					return fmt.Errorf("failed to define new data record [%w]", err)
+					return models.NewPersistenceError("failed to define new data record", err, true)
 				}
 			}
 
 			// Encrypt the data
 			theKey, encrypted, err := s.cryptoEngine.EncryptData(dbCtx, s.workingKey.ID, value, dbClient)
 			if err != nil {
-				return fmt.Errorf("failed to encryption record value [%w]", err)
+				return models.NewPersistenceError("failed to encrypt record value", err, true)
 			}
 
 			// Prepare new version
@@ -185,7 +185,7 @@ func (s *protectedKVStore) RecordKeyValue(
 				dbCtx, recordEntry, theKey, encrypted.CipherText, encrypted.Nonce, timestamp,
 			)
 			if err != nil {
-				return fmt.Errorf("failed to insert new record version [%w]", err)
+				return models.NewPersistenceError("failed to insert new record version", err, true)
 			}
 
 			return nil
@@ -193,7 +193,7 @@ func (s *protectedKVStore) RecordKeyValue(
 	); dbErr != nil {
 		return models.Record{},
 			models.RecordVersion{},
-			fmt.Errorf("failed to record key '%s' [%w]", key, dbErr)
+			models.NewKVStoreError(fmt.Sprintf("failed to record key '%s'", key), dbErr, true)
 	}
 
 	return recordEntry, versionEntry, nil
@@ -220,20 +220,24 @@ func (s *protectedKVStore) ListKeyVersions(
 			// Prepare data record
 			recordEntry, err = dbClient.GetRecordByName(dbCtx, key)
 			if err != nil {
-				return fmt.Errorf("failed to find key '%s' [%w]", key, err)
+				return models.NewPersistenceError(fmt.Sprintf("failed to find key '%s'", key), err, true)
 			}
 
 			versionEntries, err = dbClient.ListVersionsOfOneRecord(
 				dbCtx, recordEntry, db.RecordVersionQueryFilter{},
 			)
 			if err != nil {
-				return fmt.Errorf("failed to list key %s versions [%w]", recordEntry.ID, err)
+				return models.NewPersistenceError(
+					fmt.Sprintf("failed to list key %s versions", recordEntry.ID), err, true,
+				)
 			}
 
 			return nil
 		},
 	); dbErr != nil {
-		return models.Record{}, nil, fmt.Errorf("failed to list key '%s' versions [%w]", key, dbErr)
+		return models.Record{}, nil, models.NewKVStoreError(
+			fmt.Sprintf("failed to list key '%s' versions", key), dbErr, true,
+		)
 	}
 
 	return recordEntry, versionEntries, nil
@@ -256,10 +260,17 @@ func (s *protectedKVStore) GetValueOfKeyAtVersionID(
 		ctx, activeDBClient, s.persistence, func(dbCtx context.Context, dbClient db.Database) error {
 			var err error
 			versionEntry, err = dbClient.GetRecordVersion(dbCtx, versionID)
-			return err
+			if err != nil {
+				return models.NewPersistenceError(
+					fmt.Sprintf("failed to find key version %s", versionID), err, true,
+				)
+			}
+			return nil
 		},
 	); dbErr != nil {
-		return nil, fmt.Errorf("failed to find key version %s [%w]", versionID, dbErr)
+		return nil, models.NewKVStoreError(
+			fmt.Sprintf("failed to find key version %s", versionID), dbErr, true,
+		)
 	}
 
 	// Decrypt the value
@@ -269,7 +280,9 @@ func (s *protectedKVStore) GetValueOfKeyAtVersionID(
 		}, activeDBClient,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("failed to decrypt key version %s [%w]", versionID, err)
+		return nil, models.NewKVStoreError(
+			fmt.Sprintf("failed to decrypt key version %s", versionID), err, true,
+		)
 	}
 
 	return plainText, nil
@@ -293,7 +306,9 @@ func (s *protectedKVStore) GetValueOfKeyAtVersion(
 		}, activeDBClient,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("failed to decrypt key version %s [%w]", versionEntry.ID, err)
+		return nil, models.NewKVStoreError(
+			fmt.Sprintf("failed to decrypt key version %s", versionEntry.ID), err, true,
+		)
 	}
 
 	return plainText, nil
@@ -314,13 +329,20 @@ func (s *protectedKVStore) DeleteKey(
 			// Prepare data record
 			recordEntry, err := dbClient.GetRecordByName(dbCtx, key)
 			if err != nil {
-				return fmt.Errorf("failed to find key '%s' [%w]", key, err)
+				return models.NewPersistenceError(fmt.Sprintf("failed to find key '%s'", key), err, true)
 			}
 
-			return dbClient.DeleteRecord(dbCtx, recordEntry.ID)
+			if err := dbClient.DeleteRecord(dbCtx, recordEntry.ID); err != nil {
+				return models.NewPersistenceError(
+					fmt.Sprintf("failed to delete key '%s'", key), err, true,
+				)
+			}
+			return nil
 		},
 	); dbErr != nil {
-		return fmt.Errorf("failed to delete key '%s' versions [%w]", key, dbErr)
+		return models.NewKVStoreError(
+			fmt.Sprintf("failed to delete key '%s' versions", key), dbErr, true,
+		)
 	}
 
 	return nil

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/alwitt/goutils"
 	"github.com/alwitt/haven/models"
 	"github.com/oklog/ulid/v2"
 	"gorm.io/datatypes"
@@ -22,24 +23,29 @@ func (d *databaseImpl) defineNewSystemEvent(
 
 	if metadata != nil {
 		if err := d.validator.Struct(metadata); err != nil {
-			return models.SystemEventAudit{}, fmt.Errorf(
-				"new system event '%s' metadata entry is not valid [%w]", eventType, err,
+			return models.SystemEventAudit{}, goutils.NewValidationError(
+				fmt.Sprintf("new system event '%s' metadata entry is not valid", eventType), err, true,
 			)
 		}
 
-		metadataStr, _ := json.Marshal(&metadata)
+		metadataStr, err := json.Marshal(&metadata)
+		if err != nil {
+			return models.SystemEventAudit{}, goutils.NewConsistencyError(
+				fmt.Sprintf("new system event '%s' metadata serialization failed", eventType), err, true,
+			)
+		}
 		newEntry.Metadata = datatypes.JSON(metadataStr)
 	}
 
 	if err := d.validator.Struct(&newEntry); err != nil {
-		return models.SystemEventAudit{}, fmt.Errorf(
-			"new system event '%s' entry is not valid [%w]", eventType, err,
+		return models.SystemEventAudit{}, goutils.NewValidationError(
+			fmt.Sprintf("new system event '%s' entry is not valid", eventType), err, true,
 		)
 	}
 
 	if tmp := d.db.Create(&newEntry); tmp.Error != nil {
-		return models.SystemEventAudit{}, fmt.Errorf(
-			"new system event '%s' insert failed [%w]", eventType, tmp.Error,
+		return models.SystemEventAudit{}, models.NewSQLError(
+			fmt.Sprintf("new system event '%s' insert failed", eventType), tmp.Error, true,
 		)
 	}
 
@@ -80,7 +86,7 @@ func (d *databaseImpl) ListSystemEvents(
 
 	var entries []SystemEventAuditDBEntry
 	if tmp := query.Find(&entries); tmp.Error != nil {
-		return nil, fmt.Errorf("failed to list captured system events [%w]", tmp.Error)
+		return nil, models.NewSQLError("failed to list captured system events", tmp.Error, true)
 	}
 
 	result := []models.SystemEventAudit{}

@@ -75,7 +75,7 @@ func NewConnection(dbDialector gorm.Dialector, dbLogLevel logger.LogLevel) (Clie
 		SkipDefaultTransaction: true,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect with DB [%w]", err)
+		return nil, goutils.NewRuntimeError("failed to connect with DB", err, true)
 	}
 
 	instance := &clientImpl{
@@ -116,7 +116,7 @@ func (c *clientImpl) UseDatabase(
 ) error {
 	dbClient, err := newDatabase(ctx, c.db)
 	if err != nil {
-		return fmt.Errorf("failed to define `Database` instance: [%w]", err)
+		return goutils.NewRuntimeError("failed to define `Database` instance", err, true)
 	}
 	return coreLogic(ctx, dbClient)
 }
@@ -133,7 +133,7 @@ func (c *clientImpl) UseDatabaseInTransaction(
 	return c.RunSQLInTransaction(ctx, func(ctx context.Context, tx *gorm.DB) error {
 		dbClient, err := newDatabase(ctx, tx)
 		if err != nil {
-			return fmt.Errorf("failed to define `Database` instance: [%w]", err)
+			return goutils.NewRuntimeError("failed to define `Database` instance", err, true)
 		}
 		return coreLogic(ctx, dbClient)
 	})

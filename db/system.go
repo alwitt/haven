@@ -2,8 +2,8 @@ package db
 
 import (
 	"context"
-	"fmt"
 
+	"github.com/alwitt/goutils"
 	"github.com/alwitt/haven/models"
 )
 
@@ -17,7 +17,9 @@ func (d *databaseImpl) getSystemParamEntry() (SystemParamsDBEntry, error) {
 	var entries []SystemParamsDBEntry
 	dbErr := d.db.Where("id = ?", GlobalSystemParamEntryID).Find(&entries).Error
 	if dbErr != nil {
-		return SystemParamsDBEntry{}, fmt.Errorf("failed to read system params table [%w]", dbErr)
+		return SystemParamsDBEntry{}, models.NewSQLError(
+			"failed to read system params table", dbErr, true,
+		)
 	}
 	if len(entries) == 0 {
 		// Make a new one
@@ -28,8 +30,8 @@ func (d *databaseImpl) getSystemParamEntry() (SystemParamsDBEntry, error) {
 			},
 		}
 		if dbErr = d.db.Create(&newEntry).Error; dbErr != nil {
-			return SystemParamsDBEntry{}, fmt.Errorf(
-				"failed to setup singleton system params table [%w]", dbErr,
+			return SystemParamsDBEntry{}, models.NewSQLError(
+				"failed to setup singleton system params table", dbErr, true,
 			)
 		}
 		return newEntry, nil
@@ -46,7 +48,9 @@ GetSystemParamEntry fetch the global singleton system parameter entry
 func (d *databaseImpl) GetSystemParamEntry(_ context.Context) (models.SystemParams, error) {
 	entry, err := d.getSystemParamEntry()
 	if err != nil {
-		return entry.SystemParams, fmt.Errorf("unable to fetch system parameter entry [%w]", err)
+		return entry.SystemParams, goutils.NewRuntimeError(
+			"unable to fetch system parameter entry", err, true,
+		)
 	}
 	return entry.SystemParams, nil
 }
@@ -55,7 +59,7 @@ func (d *databaseImpl) GetSystemParamEntry(_ context.Context) (models.SystemPara
 func (d *databaseImpl) updateSystemParamState(newState models.SystemStateENUMType) error {
 	entry, err := d.getSystemParamEntry()
 	if err != nil {
-		return fmt.Errorf("unable to fetch system parameter entry [%w]", err)
+		return goutils.NewRuntimeError("unable to fetch system parameter entry", err, true)
 	}
 
 	if entry.State == newState {
@@ -64,13 +68,13 @@ func (d *databaseImpl) updateSystemParamState(newState models.SystemStateENUMTyp
 	}
 
 	if err := entry.ValidateNextState(newState); err != nil {
-		return fmt.Errorf("system state change to %s not allowed [%w]", newState, err)
+		return err
 	}
 
 	oldState := entry.State
 	entry.State = newState
 	if tmp := d.db.Updates(&entry); tmp.Error != nil {
-		return fmt.Errorf("system state change update failed [%w]", err)
+		return models.NewSQLError("system state change update failed", tmp.Error, true)
 	}
 
 	// record this event
@@ -78,14 +82,18 @@ func (d *databaseImpl) updateSystemParamState(newState models.SystemStateENUMTyp
 	case models.SystemStateInit:
 		_, err = d.defineNewSystemEvent(models.SystemEventTypeInitializing, nil)
 		if err != nil {
-			return fmt.Errorf("failed to log system state change audit event [%w]", err)
+			return goutils.NewRuntimeError(
+				"failed to log system state change audit event", err, true,
+			)
 		}
 
 	case models.SystemStateRunning:
 		if oldState == models.SystemStateInit {
 			_, err = d.defineNewSystemEvent(models.SystemEventTypeInitialized, nil)
 			if err != nil {
-				return fmt.Errorf("failed to log system state change audit event [%w]", err)
+				return goutils.NewRuntimeError(
+					"failed to log system state change audit event", err, true,
+				)
 			}
 		}
 	}

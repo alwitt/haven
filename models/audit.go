@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/alwitt/goutils"
 	"github.com/go-playground/validator/v10"
 	"gorm.io/datatypes"
 )
@@ -65,9 +66,16 @@ func (a SystemEventAudit) ParseMetadata(validator *validator.Validate) (interfac
 	case SystemEventTypeDeleteEncryptionKey:
 		var parsed SystemEventEncKeyRelated
 		if err := json.Unmarshal(a.Metadata, &parsed); err != nil {
-			return nil, fmt.Errorf("system event '%s' metadata parse failed [%w]", a.EventType, err)
+			return nil, goutils.NewConsistencyError(
+				fmt.Sprintf("system event '%s' metadata parse failed", a.EventType), err, true,
+			)
 		}
-		return parsed, validator.Struct(&parsed)
+		if err := validator.Struct(&parsed); err != nil {
+			return nil, goutils.NewValidationError(
+				fmt.Sprintf("system event '%s' metadata validation failed", a.EventType), err, true,
+			)
+		}
+		return parsed, nil
 
 	// Data record related system audit events
 	case SystemEventTypeAddNewRecord:
@@ -75,9 +83,16 @@ func (a SystemEventAudit) ParseMetadata(validator *validator.Validate) (interfac
 	case SystemEventTypeDeleteRecord:
 		var parsed SystemEventDataRecordRelated
 		if err := json.Unmarshal(a.Metadata, &parsed); err != nil {
-			return nil, fmt.Errorf("system event '%s' metadata parse failed [%w]", a.EventType, err)
+			return nil, goutils.NewConsistencyError(
+				fmt.Sprintf("system event '%s' metadata parse failed", a.EventType), err, true,
+			)
 		}
-		return parsed, validator.Struct(&parsed)
+		if err := validator.Struct(&parsed); err != nil {
+			return nil, goutils.NewValidationError(
+				fmt.Sprintf("system event '%s' metadata validation failed", a.EventType), err, true,
+			)
+		}
+		return parsed, nil
 	}
 	return nil, nil
 }

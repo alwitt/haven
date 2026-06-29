@@ -2,10 +2,13 @@ package db
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
+	"github.com/alwitt/goutils"
 	"github.com/alwitt/haven/models"
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 /*
@@ -27,12 +30,14 @@ func (d *databaseImpl) RecordEncryptionKey(
 	}
 
 	if err := d.validator.Struct(&newEntry); err != nil {
-		return models.EncryptionKey{}, fmt.Errorf("new encryption key entry is invalid [%w]", err)
+		return models.EncryptionKey{}, goutils.NewValidationError(
+			"new encryption key entry is invalid", err, true,
+		)
 	}
 
 	if tmp := d.db.Create(&newEntry); tmp.Error != nil {
-		return models.EncryptionKey{}, fmt.Errorf(
-			"new encryption key entry insert failed [%w]", tmp.Error,
+		return models.EncryptionKey{}, models.NewSQLError(
+			"new encryption key entry insert failed", tmp.Error, true,
 		)
 	}
 
@@ -40,8 +45,8 @@ func (d *databaseImpl) RecordEncryptionKey(
 	if _, err := d.defineNewSystemEvent(
 		models.SystemEventTypeNewEncryptionKey, models.SystemEventEncKeyRelated{KeyID: newEntry.ID},
 	); err != nil {
-		return models.EncryptionKey{}, fmt.Errorf(
-			"failed to log add new encryption key audit event [%w]", err,
+		return models.EncryptionKey{}, goutils.NewRuntimeError(
+			"failed to log add new encryption key audit event", err, true,
 		)
 	}
 
@@ -51,8 +56,17 @@ func (d *databaseImpl) RecordEncryptionKey(
 // getEncryptionKey fetch one encryption key
 func (d *databaseImpl) getEncryptionKey(keyID string) (EncryptionKeyDBEntry, error) {
 	var entry EncryptionKeyDBEntry
-	err := d.db.Where("id = ?", keyID).First(&entry).Error
-	return entry, err
+	if err := d.db.Where("id = ?", keyID).First(&entry).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return entry, goutils.NewNotFoundError(
+				fmt.Sprintf("encryption key %s does not exist", keyID), err, true,
+			)
+		}
+		return entry, models.NewSQLError(
+			fmt.Sprintf("failed to fetch encryption key %s", keyID), err, true,
+		)
+	}
+	return entry, nil
 }
 
 /*
@@ -67,7 +81,9 @@ func (d *databaseImpl) GetEncryptionKey(
 ) (models.EncryptionKey, error) {
 	entry, err := d.getEncryptionKey(keyID)
 	if err != nil {
-		return models.EncryptionKey{}, fmt.Errorf("failed to fetch encryption key %s [%w]", keyID, err)
+		return models.EncryptionKey{}, goutils.NewRuntimeError(
+			fmt.Sprintf("failed to fetch encryption key %s", keyID), err, true,
+		)
 	}
 	return entry.EncryptionKey, nil
 }
@@ -99,7 +115,7 @@ func (d *databaseImpl) ListEncryptionKeys(
 
 	var entries []EncryptionKeyDBEntry
 	if tmp := query.Find(&entries); tmp.Error != nil {
-		return nil, fmt.Errorf("failed to list encryption keys [%w]", tmp.Error)
+		return nil, models.NewSQLError("failed to list encryption keys", tmp.Error, true)
 	}
 
 	result := []models.EncryptionKey{}
@@ -116,7 +132,9 @@ func (d *databaseImpl) updateEncKeyState(
 ) error {
 	entry, err := d.getEncryptionKey(keyID)
 	if err != nil {
-		return fmt.Errorf("failed to fetch encryption key %s [%w]", keyID, err)
+		return goutils.NewRuntimeError(
+			fmt.Sprintf("failed to fetch encryption key %s", keyID), err, true,
+		)
 	}
 
 	if entry.State == newState {
@@ -125,12 +143,12 @@ func (d *databaseImpl) updateEncKeyState(
 	}
 
 	if err := entry.ValidateNextState(newState); err != nil {
-		return fmt.Errorf("encryption key state change to %s not allowed [%w]", newState, err)
+		return err
 	}
 
 	entry.State = newState
 	if tmp := d.db.Updates(&entry); tmp.Error != nil {
-		return fmt.Errorf("encryption key state change update failed [%w]", err)
+		return models.NewSQLError("encryption key state change update failed", tmp.Error, true)
 	}
 
 	// record this event
@@ -146,8 +164,8 @@ func (d *databaseImpl) updateEncKeyState(
 	if _, err := d.defineNewSystemEvent(
 		systemEventType, models.SystemEventEncKeyRelated{KeyID: keyID},
 	); err != nil {
-		return fmt.Errorf(
-			"failed to log encryption key state change audit event [%w]", err,
+		return goutils.NewRuntimeError(
+			"failed to log encryption key state change audit event", err, true,
 		)
 	}
 
@@ -183,19 +201,23 @@ DeleteEncryptionKey delete encryption key
 func (d *databaseImpl) DeleteEncryptionKey(_ context.Context, keyID string) error {
 	entry, err := d.getEncryptionKey(keyID)
 	if err != nil {
-		return fmt.Errorf("failed to fetch encryption key %s [%w]", keyID, err)
+		return goutils.NewRuntimeError(
+			fmt.Sprintf("failed to fetch encryption key %s", keyID), err, true,
+		)
 	}
 
 	if tmp := d.db.Delete(&entry); tmp.Error != nil {
-		return fmt.Errorf("failed to delete encryption key %s [%w]", keyID, err)
+		return models.NewSQLError(
+			fmt.Sprintf("failed to delete encryption key %s", keyID), tmp.Error, true,
+		)
 	}
 
 	// Record this event
 	if _, err := d.defineNewSystemEvent(
 		models.SystemEventTypeDeleteEncryptionKey, models.SystemEventEncKeyRelated{KeyID: keyID},
 	); err != nil {
-		return fmt.Errorf(
-			"failed to log encryption key state change audit event [%w]", err,
+		return goutils.NewRuntimeError(
+			"failed to log encryption key state change audit event", err, true,
 		)
 	}
 

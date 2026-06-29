@@ -4,6 +4,8 @@ package models
 import (
 	"fmt"
 	"time"
+
+	"github.com/alwitt/goutils"
 )
 
 // EncryptionKeyStateENUMType encryption state enum type
@@ -50,11 +52,17 @@ func (e *EncryptionKey) ValidateNextState(newState EncryptionKeyStateENUMType) e
 
 	availableNextStates, ok := statesWithTransitions[e.State]
 	if !ok {
-		return fmt.Errorf("email can't transition out of state '%s'", e.State)
+		return goutils.NewConsistencyError(
+			fmt.Sprintf("encryption key can't transition out of state '%s'", e.State), nil, true,
+		)
 	}
 
 	if _, ok := availableNextStates[newState]; !ok {
-		return fmt.Errorf("email can't transition from '%s' to '%s'", e.State, newState)
+		return goutils.NewConsistencyError(
+			fmt.Sprintf(
+				"encryption key can't transition from '%s' to '%s'", e.State, newState,
+			), nil, true,
+		)
 	}
 
 	return nil

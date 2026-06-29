@@ -3,6 +3,8 @@ package models
 import (
 	"fmt"
 	"time"
+
+	"github.com/alwitt/goutils"
 )
 
 // SystemStateENUMType system operating state ENUM
@@ -49,11 +51,17 @@ func (p *SystemParams) ValidateNextState(newState SystemStateENUMType) error {
 
 	availableNextStates, ok := statesWithTransitions[p.State]
 	if !ok {
-		return fmt.Errorf("email can't transition out of state '%s'", p.State)
+		return goutils.NewConsistencyError(
+			fmt.Sprintf("system can't transition out of state '%s'", p.State), nil, true,
+		)
 	}
 
 	if _, ok := availableNextStates[newState]; !ok {
-		return fmt.Errorf("email can't transition from '%s' to '%s'", p.State, newState)
+		return goutils.NewConsistencyError(
+			fmt.Sprintf(
+				"system can't transition from '%s' to '%s'", p.State, newState,
+			), nil, true,
+		)
 	}
 
 	return nil

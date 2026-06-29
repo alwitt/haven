@@ -2,7 +2,6 @@ package db
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	"github.com/alwitt/goutils"
@@ -295,7 +294,7 @@ func newDatabase(_ context.Context, sqlClient *gorm.DB) (Database, error) {
 	}
 
 	if err := models.RegisterWithValidator(instance.validator); err != nil {
-		return nil, fmt.Errorf("failed to install custom validation macros [%w]", err)
+		return nil, goutils.NewRuntimeError("failed to install custom validation macros", err, true)
 	}
 
 	return instance, nil
