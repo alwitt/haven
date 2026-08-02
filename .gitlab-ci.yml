@@ -1,11 +1,9 @@
-image: alwitt/cicd-support:cgoutils-0.1.0
-
 stages:
   - test
 
 cicd:
   stage: test
-
+  image: alwitt/cicd-support:cgoutils-0.2.0
   script:
     - go fmt $(go list ./...)
     - go vet $(go list ./...)
