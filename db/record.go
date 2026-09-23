@@ -2,7 +2,6 @@ package db
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"time"
 
@@ -16,6 +15,29 @@ import (
 // ======================================================================================
 // Data records
 
+// requireSystemReady refuse a record data change unless the system is ready for normal
+// operation
+//
+// A maintenance action owns the cryptographic material in every other state, and a record
+// written underneath one would be missed by a key rotation. The check runs inside the
+// caller's transaction, so it sees the state that transaction will write against.
+func (d *databaseImpl) requireSystemReady() error {
+	entry, err := d.getSystemParamEntry()
+	if err != nil {
+		return goutils.NewRuntimeError("unable to fetch system parameter entry", err, true)
+	}
+	if entry.State != models.SystemStateReady {
+		return goutils.NewRuntimeError(
+			fmt.Sprintf(
+				"system is in state '%s'; complete the outstanding maintenance action before "+
+					"changing records", entry.State,
+			),
+			nil, true,
+		)
+	}
+	return nil
+}
+
 /*
 DefineNewRecord define new data record
 
@@ -24,6 +46,10 @@ DefineNewRecord define new data record
 	@returns record entry
 */
 func (d *databaseImpl) DefineNewRecord(_ context.Context, name string) (models.Record, error) {
+	if err := d.requireSystemReady(); err != nil {
+		return models.Record{}, err
+	}
+
 	newEntry := RecordDBEntry{
 		Record: models.Record{
 			ID:   uuid.NewString(),
@@ -38,7 +64,7 @@ func (d *databaseImpl) DefineNewRecord(_ context.Context, name string) (models.R
 	}
 
 	if tmp := d.db.Create(&newEntry); tmp.Error != nil {
-		return models.Record{}, models.NewSQLError(
+		return models.Record{}, goutils.NewSQLError(
 			fmt.Sprintf("new record '%s' failed insert", name), tmp.Error, true,
 		)
 	}
@@ -59,17 +85,8 @@ func (d *databaseImpl) DefineNewRecord(_ context.Context, name string) (models.R
 // getRecordEntry find a data record by ID
 func (d *databaseImpl) getRecordEntry(recordID string) (RecordDBEntry, error) {
 	var entry RecordDBEntry
-	if err := d.db.Where("id = ?", recordID).First(&entry).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return entry, goutils.NewNotFoundError(
-				fmt.Sprintf("record %s does not exist", recordID), err, true,
-			)
-		}
-		return entry, models.NewSQLError(
-			fmt.Sprintf("failed to fetch record %s", recordID), err, true,
-		)
-	}
-	return entry, nil
+	tmp := d.db.Where("id = ?", recordID).First(&entry)
+	return entry, notFoundOrError(tmp.Error, "record", recordID)
 }
 
 /*
@@ -103,18 +120,8 @@ func (d *databaseImpl) GetRecordByName(
 	_ context.Context, recordName string,
 ) (models.Record, error) {
 	var entry RecordDBEntry
-	if tmp := d.db.Where("name = ?", recordName).First(&entry); tmp.Error != nil {
-		if errors.Is(tmp.Error, gorm.ErrRecordNotFound) {
-			return models.Record{}, goutils.NewNotFoundError(
-				fmt.Sprintf("record '%s' does not exist", recordName), tmp.Error, true,
-			)
-		}
-		return models.Record{}, models.NewSQLError(
-			fmt.Sprintf("failed to fetch record '%s'", recordName), tmp.Error, true,
-		)
-	}
-
-	return entry.Record, nil
+	tmp := d.db.Where("name = ?", recordName).First(&entry)
+	return entry.Record, notFoundOrError(tmp.Error, "record", recordName)
 }
 
 /*
@@ -140,7 +147,7 @@ func (d *databaseImpl) ListRecords(
 
 	var entries []RecordDBEntry
 	if tmp := query.Find(&entries); tmp.Error != nil {
-		return nil, models.NewSQLError("failed to list data records", tmp.Error, true)
+		return nil, goutils.NewSQLError("failed to list data records", tmp.Error, true)
 	}
 
 	result := []models.Record{}
@@ -158,6 +165,10 @@ DeleteRecord delete a data record
 	@param recordID string - data record ID
 */
 func (d *databaseImpl) DeleteRecord(_ context.Context, recordID string) error {
+	if err := d.requireSystemReady(); err != nil {
+		return err
+	}
+
 	entry, err := d.getRecordEntry(recordID)
 	if err != nil {
 		return goutils.NewRuntimeError(
@@ -166,7 +177,7 @@ func (d *databaseImpl) DeleteRecord(_ context.Context, recordID string) error {
 	}
 
 	if tmp := d.db.Delete(&entry); tmp.Error != nil {
-		return models.NewSQLError(
+		return goutils.NewSQLError(
 			fmt.Sprintf("failed to delete record %s", recordID), tmp.Error, true,
 		)
 	}
@@ -188,10 +199,25 @@ func (d *databaseImpl) DeleteRecord(_ context.Context, recordID string) error {
 // Data record versions
 
 /*
+NewRecordVersionID generate a new data record version ID
+
+Version IDs are ULIDs, so they sort by creation time.
+
+	@returns new version ID
+*/
+func NewRecordVersionID() string {
+	return ulid.Make().String()
+}
+
+/*
 DefineNewVersionForRecord define new data record version
+
+The caller assigns the version ID (see NewRecordVersionID) because it is bound into
+the value's AEAD associated data, so it must be fixed before the value is encrypted.
 
 	@param ctx context.Context - execution context
 	@param record models.Record - the parent data record
+	@param versionID string - the ID of the new version
 	@param encKey models.EncryptionKey - the encryption key that encrypted the data of
 	    this version
 	@param value []byte - the encrypted data of this record version
@@ -202,14 +228,19 @@ DefineNewVersionForRecord define new data record version
 func (d *databaseImpl) DefineNewVersionForRecord(
 	_ context.Context,
 	record models.Record,
+	versionID string,
 	encKey models.EncryptionKey,
 	value []byte,
 	nonce []byte,
 	timestamp time.Time,
 ) (models.RecordVersion, error) {
+	if err := d.requireSystemReady(); err != nil {
+		return models.RecordVersion{}, err
+	}
+
 	newEntry := RecordVersionDBEntry{
 		RecordVersion: models.RecordVersion{
-			ID:        ulid.Make().String(),
+			ID:        versionID,
 			RecordID:  record.ID,
 			EncKeyID:  encKey.ID,
 			EncValue:  value,
@@ -226,7 +257,7 @@ func (d *databaseImpl) DefineNewVersionForRecord(
 	}
 
 	if tmp := d.db.Create(&newEntry); tmp.Error != nil {
-		return models.RecordVersion{}, models.NewSQLError(
+		return models.RecordVersion{}, goutils.NewSQLError(
 			fmt.Sprintf("new version for record %s insert failed", record.ID), tmp.Error, true,
 		)
 	}
@@ -245,18 +276,105 @@ func (d *databaseImpl) GetRecordVersion(
 	_ context.Context, versionID string,
 ) (models.RecordVersion, error) {
 	var entry RecordVersionDBEntry
-	if tmp := d.db.Where("id = ?", versionID).First(&entry); tmp.Error != nil {
-		if errors.Is(tmp.Error, gorm.ErrRecordNotFound) {
-			return models.RecordVersion{}, goutils.NewNotFoundError(
-				fmt.Sprintf("record version %s does not exist", versionID), tmp.Error, true,
-			)
-		}
-		return models.RecordVersion{}, models.NewSQLError(
-			fmt.Sprintf("failed to fetch record version %s", versionID), tmp.Error, true,
+	tmp := d.db.Where("id = ?", versionID).First(&entry)
+	return entry.RecordVersion, notFoundOrError(tmp.Error, "record version", versionID)
+}
+
+/*
+UpdateRecordVersionEncryption replace the encrypted payload of an existing record version
+
+This re-encrypts a version in place during an encryption key rotation: the version keeps
+its ID, its parent record and its place in the record's history, and only the encryption
+columns change. It is deliberately usable while the system is rotating keys, which is when
+the record data API is closed.
+
+	@param ctx context.Context - execution context
+	@param versionID string - data record version ID
+	@param encKey models.EncryptionKey - the encryption key which encrypted the new value
+	@param value []byte - the newly encrypted data of this record version
+	@param nonce []byte - the new encryption nonce
+	@returns the updated record version entry
+*/
+func (d *databaseImpl) UpdateRecordVersionEncryption(
+	_ context.Context,
+	versionID string,
+	encKey models.EncryptionKey,
+	value []byte,
+	nonce []byte,
+) (models.RecordVersion, error) {
+	var entry RecordVersionDBEntry
+	tmp := d.db.Where("id = ?", versionID).First(&entry)
+	if err := notFoundOrError(tmp.Error, "record version", versionID); err != nil {
+		return models.RecordVersion{}, err
+	}
+
+	entry.EncKeyID = encKey.ID
+	entry.EncValue = value
+	entry.EncNonce = nonce
+
+	if err := d.validator.Struct(&entry); err != nil {
+		return models.RecordVersion{}, goutils.NewValidationError(
+			fmt.Sprintf("re-encrypted version %s is invalid", versionID), err, true,
+		)
+	}
+
+	if tmp := d.db.Model(&RecordVersionDBEntry{}).
+		Where("id = ?", versionID).
+		Updates(map[string]interface{}{
+			"enc_key_id": encKey.ID, "enc_value": value, "enc_nonce": nonce,
+		}); tmp.Error != nil {
+		return models.RecordVersion{}, goutils.NewSQLError(
+			fmt.Sprintf("version %s re-encryption update failed", versionID), tmp.Error, true,
 		)
 	}
 
 	return entry.RecordVersion, nil
+}
+
+/*
+PurgeRecordVersion destroy one record version
+
+This is the only way a version is removed without its record being removed with it. It
+exists for versions an encryption key rotation cannot decrypt, which block the rotation
+and can therefore only be restored from a backup or destroyed. Every purge is audited
+because the row is the only record that the data ever existed.
+
+	@param ctx context.Context - execution context
+	@param versionID string - data record version ID
+*/
+func (d *databaseImpl) PurgeRecordVersion(_ context.Context, versionID string) error {
+	var entry RecordVersionDBEntry
+	tmp := d.db.Where("id = ?", versionID).First(&entry)
+	if err := notFoundOrError(tmp.Error, "record version", versionID); err != nil {
+		return err
+	}
+
+	recordEntry, err := d.getRecordEntry(entry.RecordID)
+	if err != nil {
+		return goutils.NewRuntimeError(
+			fmt.Sprintf("failed to fetch record %s", entry.RecordID), err, true,
+		)
+	}
+
+	if tmp := d.db.Delete(&entry); tmp.Error != nil {
+		return goutils.NewSQLError(
+			fmt.Sprintf("failed to delete record version %s", versionID), tmp.Error, true,
+		)
+	}
+
+	// Record this event
+	if _, err := d.defineNewSystemEvent(
+		models.SystemEventTypePurgeRecordVersion,
+		models.SystemEventRecordVersionRelated{
+			VersionID: versionID, RecordID: recordEntry.ID, RecordName: recordEntry.Name,
+		},
+	); err != nil {
+		return goutils.NewRuntimeError(
+			fmt.Sprintf("failed to log purge record version %s audit event", versionID), err, true,
+		)
+	}
+
+	return nil
 }
 
 /*
@@ -269,15 +387,7 @@ ListAllRecordVersions list data record versions
 func (d *databaseImpl) ListAllRecordVersions(
 	_ context.Context, filters RecordVersionQueryFilter,
 ) ([]models.RecordVersion, error) {
-	query := d.db.Model(&RecordVersionDBEntry{})
-
-	if filters.TargetRecordID != nil {
-		query = query.Where("record_id = ?", *filters.TargetRecordID)
-	}
-
-	if filters.TargetEncKeyID != nil {
-		query = query.Where("enc_key_id = ?", *filters.TargetEncKeyID)
-	}
+	query := d.recordVersionQuery(filters)
 
 	if filters.Limit != nil {
 		query = query.Limit(*filters.Limit)
@@ -290,7 +400,7 @@ func (d *databaseImpl) ListAllRecordVersions(
 
 	var entries []RecordVersionDBEntry
 	if tmp := query.Find(&entries); tmp.Error != nil {
-		return nil, models.NewSQLError("failed to list data record versions", tmp.Error, true)
+		return nil, goutils.NewSQLError("failed to list data record versions", tmp.Error, true)
 	}
 
 	result := []models.RecordVersion{}
@@ -299,6 +409,42 @@ func (d *databaseImpl) ListAllRecordVersions(
 	}
 
 	return result, nil
+}
+
+// recordVersionQuery build the record version query matching a filter's conditions
+//
+// Paging is not applied here; it means different things to a listing and to a count.
+func (d *databaseImpl) recordVersionQuery(filters RecordVersionQueryFilter) *gorm.DB {
+	query := d.db.Model(&RecordVersionDBEntry{})
+
+	if filters.TargetRecordID != nil {
+		query = query.Where("record_id = ?", *filters.TargetRecordID)
+	}
+
+	if filters.TargetEncKeyID != nil {
+		query = query.Where("enc_key_id = ?", *filters.TargetEncKeyID)
+	}
+
+	return query
+}
+
+/*
+CountRecordVersions count the data record versions matching a filter
+
+The filter's Limit and Offset are ignored: the count of one page is not a useful number.
+
+	@param ctx context.Context - execution context
+	@param filters RecordVersionQueryFilter - entry counting filter
+	@returns the number of matching record versions
+*/
+func (d *databaseImpl) CountRecordVersions(
+	_ context.Context, filters RecordVersionQueryFilter,
+) (int64, error) {
+	var count int64
+	if tmp := d.recordVersionQuery(filters).Count(&count); tmp.Error != nil {
+		return 0, goutils.NewSQLError("failed to count data record versions", tmp.Error, true)
+	}
+	return count, nil
 }
 
 /*

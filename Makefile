@@ -35,6 +35,10 @@ test-package: .prepare ## Run all tests in a package. Set `PKG` as target packag
 mock: ## Define support mocks
 	@mockery
 
+.PHONY: gen-test-certs
+gen-test-certs: ## Regenerate the x509 test fixtures under test/certs/
+	@python3 test/gen_certs.py
+
 .PHONY: up
 up: .prepare ## Start docker compose development stack
 	docker compose -f docker/docker-compose.yml up -d

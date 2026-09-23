@@ -41,8 +41,8 @@ func (_m *CryptographyEngine) EXPECT() *CryptographyEngine_Expecter {
 }
 
 // DecryptData provides a mock function for the type CryptographyEngine
-func (_mock *CryptographyEngine) DecryptData(ctx context.Context, keyID string, encrypted encryption.EncryptedData, activeDBClient db.Database) (models.EncryptionKey, []byte, error) {
-	ret := _mock.Called(ctx, keyID, encrypted, activeDBClient)
+func (_mock *CryptographyEngine) DecryptData(ctx context.Context, keyID string, encrypted encryption.EncryptedData, additional []byte, activeDBClient db.Database) (models.EncryptionKey, []byte, error) {
+	ret := _mock.Called(ctx, keyID, encrypted, additional, activeDBClient)
 
 	if len(ret) == 0 {
 		panic("no return value specified for DecryptData")
@@ -51,23 +51,23 @@ func (_mock *CryptographyEngine) DecryptData(ctx context.Context, keyID string, 
 	var r0 models.EncryptionKey
 	var r1 []byte
 	var r2 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string, encryption.EncryptedData, db.Database) (models.EncryptionKey, []byte, error)); ok {
-		return returnFunc(ctx, keyID, encrypted, activeDBClient)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, encryption.EncryptedData, []byte, db.Database) (models.EncryptionKey, []byte, error)); ok {
+		return returnFunc(ctx, keyID, encrypted, additional, activeDBClient)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string, encryption.EncryptedData, db.Database) models.EncryptionKey); ok {
-		r0 = returnFunc(ctx, keyID, encrypted, activeDBClient)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, encryption.EncryptedData, []byte, db.Database) models.EncryptionKey); ok {
+		r0 = returnFunc(ctx, keyID, encrypted, additional, activeDBClient)
 	} else {
 		r0 = ret.Get(0).(models.EncryptionKey)
 	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, string, encryption.EncryptedData, db.Database) []byte); ok {
-		r1 = returnFunc(ctx, keyID, encrypted, activeDBClient)
+	if returnFunc, ok := ret.Get(1).(func(context.Context, string, encryption.EncryptedData, []byte, db.Database) []byte); ok {
+		r1 = returnFunc(ctx, keyID, encrypted, additional, activeDBClient)
 	} else {
 		if ret.Get(1) != nil {
 			r1 = ret.Get(1).([]byte)
 		}
 	}
-	if returnFunc, ok := ret.Get(2).(func(context.Context, string, encryption.EncryptedData, db.Database) error); ok {
-		r2 = returnFunc(ctx, keyID, encrypted, activeDBClient)
+	if returnFunc, ok := ret.Get(2).(func(context.Context, string, encryption.EncryptedData, []byte, db.Database) error); ok {
+		r2 = returnFunc(ctx, keyID, encrypted, additional, activeDBClient)
 	} else {
 		r2 = ret.Error(2)
 	}
@@ -83,12 +83,13 @@ type CryptographyEngine_DecryptData_Call struct {
 //   - ctx context.Context
 //   - keyID string
 //   - encrypted encryption.EncryptedData
+//   - additional []byte
 //   - activeDBClient db.Database
-func (_e *CryptographyEngine_Expecter) DecryptData(ctx interface{}, keyID interface{}, encrypted interface{}, activeDBClient interface{}) *CryptographyEngine_DecryptData_Call {
-	return &CryptographyEngine_DecryptData_Call{Call: _e.mock.On("DecryptData", ctx, keyID, encrypted, activeDBClient)}
+func (_e *CryptographyEngine_Expecter) DecryptData(ctx interface{}, keyID interface{}, encrypted interface{}, additional interface{}, activeDBClient interface{}) *CryptographyEngine_DecryptData_Call {
+	return &CryptographyEngine_DecryptData_Call{Call: _e.mock.On("DecryptData", ctx, keyID, encrypted, additional, activeDBClient)}
 }
 
-func (_c *CryptographyEngine_DecryptData_Call) Run(run func(ctx context.Context, keyID string, encrypted encryption.EncryptedData, activeDBClient db.Database)) *CryptographyEngine_DecryptData_Call {
+func (_c *CryptographyEngine_DecryptData_Call) Run(run func(ctx context.Context, keyID string, encrypted encryption.EncryptedData, additional []byte, activeDBClient db.Database)) *CryptographyEngine_DecryptData_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
@@ -102,15 +103,20 @@ func (_c *CryptographyEngine_DecryptData_Call) Run(run func(ctx context.Context,
 		if args[2] != nil {
 			arg2 = args[2].(encryption.EncryptedData)
 		}
-		var arg3 db.Database
+		var arg3 []byte
 		if args[3] != nil {
-			arg3 = args[3].(db.Database)
+			arg3 = args[3].([]byte)
+		}
+		var arg4 db.Database
+		if args[4] != nil {
+			arg4 = args[4].(db.Database)
 		}
 		run(
 			arg0,
 			arg1,
 			arg2,
 			arg3,
+			arg4,
 		)
 	})
 	return _c
@@ -121,77 +127,14 @@ func (_c *CryptographyEngine_DecryptData_Call) Return(encryptionKey models.Encry
 	return _c
 }
 
-func (_c *CryptographyEngine_DecryptData_Call) RunAndReturn(run func(ctx context.Context, keyID string, encrypted encryption.EncryptedData, activeDBClient db.Database) (models.EncryptionKey, []byte, error)) *CryptographyEngine_DecryptData_Call {
-	_c.Call.Return(run)
-	return _c
-}
-
-// DeleteEncryptionKey provides a mock function for the type CryptographyEngine
-func (_mock *CryptographyEngine) DeleteEncryptionKey(ctx context.Context, keyID string, activeDBClient db.Database) error {
-	ret := _mock.Called(ctx, keyID, activeDBClient)
-
-	if len(ret) == 0 {
-		panic("no return value specified for DeleteEncryptionKey")
-	}
-
-	var r0 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string, db.Database) error); ok {
-		r0 = returnFunc(ctx, keyID, activeDBClient)
-	} else {
-		r0 = ret.Error(0)
-	}
-	return r0
-}
-
-// CryptographyEngine_DeleteEncryptionKey_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'DeleteEncryptionKey'
-type CryptographyEngine_DeleteEncryptionKey_Call struct {
-	*mock.Call
-}
-
-// DeleteEncryptionKey is a helper method to define mock.On call
-//   - ctx context.Context
-//   - keyID string
-//   - activeDBClient db.Database
-func (_e *CryptographyEngine_Expecter) DeleteEncryptionKey(ctx interface{}, keyID interface{}, activeDBClient interface{}) *CryptographyEngine_DeleteEncryptionKey_Call {
-	return &CryptographyEngine_DeleteEncryptionKey_Call{Call: _e.mock.On("DeleteEncryptionKey", ctx, keyID, activeDBClient)}
-}
-
-func (_c *CryptographyEngine_DeleteEncryptionKey_Call) Run(run func(ctx context.Context, keyID string, activeDBClient db.Database)) *CryptographyEngine_DeleteEncryptionKey_Call {
-	_c.Call.Run(func(args mock.Arguments) {
-		var arg0 context.Context
-		if args[0] != nil {
-			arg0 = args[0].(context.Context)
-		}
-		var arg1 string
-		if args[1] != nil {
-			arg1 = args[1].(string)
-		}
-		var arg2 db.Database
-		if args[2] != nil {
-			arg2 = args[2].(db.Database)
-		}
-		run(
-			arg0,
-			arg1,
-			arg2,
-		)
-	})
-	return _c
-}
-
-func (_c *CryptographyEngine_DeleteEncryptionKey_Call) Return(err error) *CryptographyEngine_DeleteEncryptionKey_Call {
-	_c.Call.Return(err)
-	return _c
-}
-
-func (_c *CryptographyEngine_DeleteEncryptionKey_Call) RunAndReturn(run func(ctx context.Context, keyID string, activeDBClient db.Database) error) *CryptographyEngine_DeleteEncryptionKey_Call {
+func (_c *CryptographyEngine_DecryptData_Call) RunAndReturn(run func(ctx context.Context, keyID string, encrypted encryption.EncryptedData, additional []byte, activeDBClient db.Database) (models.EncryptionKey, []byte, error)) *CryptographyEngine_DecryptData_Call {
 	_c.Call.Return(run)
 	return _c
 }
 
 // EncryptData provides a mock function for the type CryptographyEngine
-func (_mock *CryptographyEngine) EncryptData(ctx context.Context, keyID string, plainText []byte, activeDBClient db.Database) (models.EncryptionKey, encryption.EncryptedData, error) {
-	ret := _mock.Called(ctx, keyID, plainText, activeDBClient)
+func (_mock *CryptographyEngine) EncryptData(ctx context.Context, keyID string, plainText []byte, additional []byte, activeDBClient db.Database) (models.EncryptionKey, encryption.EncryptedData, error) {
+	ret := _mock.Called(ctx, keyID, plainText, additional, activeDBClient)
 
 	if len(ret) == 0 {
 		panic("no return value specified for EncryptData")
@@ -200,21 +143,21 @@ func (_mock *CryptographyEngine) EncryptData(ctx context.Context, keyID string, 
 	var r0 models.EncryptionKey
 	var r1 encryption.EncryptedData
 	var r2 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string, []byte, db.Database) (models.EncryptionKey, encryption.EncryptedData, error)); ok {
-		return returnFunc(ctx, keyID, plainText, activeDBClient)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, []byte, []byte, db.Database) (models.EncryptionKey, encryption.EncryptedData, error)); ok {
+		return returnFunc(ctx, keyID, plainText, additional, activeDBClient)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string, []byte, db.Database) models.EncryptionKey); ok {
-		r0 = returnFunc(ctx, keyID, plainText, activeDBClient)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, []byte, []byte, db.Database) models.EncryptionKey); ok {
+		r0 = returnFunc(ctx, keyID, plainText, additional, activeDBClient)
 	} else {
 		r0 = ret.Get(0).(models.EncryptionKey)
 	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, string, []byte, db.Database) encryption.EncryptedData); ok {
-		r1 = returnFunc(ctx, keyID, plainText, activeDBClient)
+	if returnFunc, ok := ret.Get(1).(func(context.Context, string, []byte, []byte, db.Database) encryption.EncryptedData); ok {
+		r1 = returnFunc(ctx, keyID, plainText, additional, activeDBClient)
 	} else {
 		r1 = ret.Get(1).(encryption.EncryptedData)
 	}
-	if returnFunc, ok := ret.Get(2).(func(context.Context, string, []byte, db.Database) error); ok {
-		r2 = returnFunc(ctx, keyID, plainText, activeDBClient)
+	if returnFunc, ok := ret.Get(2).(func(context.Context, string, []byte, []byte, db.Database) error); ok {
+		r2 = returnFunc(ctx, keyID, plainText, additional, activeDBClient)
 	} else {
 		r2 = ret.Error(2)
 	}
@@ -230,12 +173,13 @@ type CryptographyEngine_EncryptData_Call struct {
 //   - ctx context.Context
 //   - keyID string
 //   - plainText []byte
+//   - additional []byte
 //   - activeDBClient db.Database
-func (_e *CryptographyEngine_Expecter) EncryptData(ctx interface{}, keyID interface{}, plainText interface{}, activeDBClient interface{}) *CryptographyEngine_EncryptData_Call {
-	return &CryptographyEngine_EncryptData_Call{Call: _e.mock.On("EncryptData", ctx, keyID, plainText, activeDBClient)}
+func (_e *CryptographyEngine_Expecter) EncryptData(ctx interface{}, keyID interface{}, plainText interface{}, additional interface{}, activeDBClient interface{}) *CryptographyEngine_EncryptData_Call {
+	return &CryptographyEngine_EncryptData_Call{Call: _e.mock.On("EncryptData", ctx, keyID, plainText, additional, activeDBClient)}
 }
 
-func (_c *CryptographyEngine_EncryptData_Call) Run(run func(ctx context.Context, keyID string, plainText []byte, activeDBClient db.Database)) *CryptographyEngine_EncryptData_Call {
+func (_c *CryptographyEngine_EncryptData_Call) Run(run func(ctx context.Context, keyID string, plainText []byte, additional []byte, activeDBClient db.Database)) *CryptographyEngine_EncryptData_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
@@ -249,15 +193,20 @@ func (_c *CryptographyEngine_EncryptData_Call) Run(run func(ctx context.Context,
 		if args[2] != nil {
 			arg2 = args[2].([]byte)
 		}
-		var arg3 db.Database
+		var arg3 []byte
 		if args[3] != nil {
-			arg3 = args[3].(db.Database)
+			arg3 = args[3].([]byte)
+		}
+		var arg4 db.Database
+		if args[4] != nil {
+			arg4 = args[4].(db.Database)
 		}
 		run(
 			arg0,
 			arg1,
 			arg2,
 			arg3,
+			arg4,
 		)
 	})
 	return _c
@@ -268,7 +217,81 @@ func (_c *CryptographyEngine_EncryptData_Call) Return(encryptionKey models.Encry
 	return _c
 }
 
-func (_c *CryptographyEngine_EncryptData_Call) RunAndReturn(run func(ctx context.Context, keyID string, plainText []byte, activeDBClient db.Database) (models.EncryptionKey, encryption.EncryptedData, error)) *CryptographyEngine_EncryptData_Call {
+func (_c *CryptographyEngine_EncryptData_Call) RunAndReturn(run func(ctx context.Context, keyID string, plainText []byte, additional []byte, activeDBClient db.Database) (models.EncryptionKey, encryption.EncryptedData, error)) *CryptographyEngine_EncryptData_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// FindUndecryptableVersions provides a mock function for the type CryptographyEngine
+func (_mock *CryptographyEngine) FindUndecryptableVersions(ctx context.Context, versions []models.RecordVersion, activeDBClient db.Database) ([]encryption.UndecryptableVersion, error) {
+	ret := _mock.Called(ctx, versions, activeDBClient)
+
+	if len(ret) == 0 {
+		panic("no return value specified for FindUndecryptableVersions")
+	}
+
+	var r0 []encryption.UndecryptableVersion
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, []models.RecordVersion, db.Database) ([]encryption.UndecryptableVersion, error)); ok {
+		return returnFunc(ctx, versions, activeDBClient)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, []models.RecordVersion, db.Database) []encryption.UndecryptableVersion); ok {
+		r0 = returnFunc(ctx, versions, activeDBClient)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]encryption.UndecryptableVersion)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, []models.RecordVersion, db.Database) error); ok {
+		r1 = returnFunc(ctx, versions, activeDBClient)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// CryptographyEngine_FindUndecryptableVersions_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'FindUndecryptableVersions'
+type CryptographyEngine_FindUndecryptableVersions_Call struct {
+	*mock.Call
+}
+
+// FindUndecryptableVersions is a helper method to define mock.On call
+//   - ctx context.Context
+//   - versions []models.RecordVersion
+//   - activeDBClient db.Database
+func (_e *CryptographyEngine_Expecter) FindUndecryptableVersions(ctx interface{}, versions interface{}, activeDBClient interface{}) *CryptographyEngine_FindUndecryptableVersions_Call {
+	return &CryptographyEngine_FindUndecryptableVersions_Call{Call: _e.mock.On("FindUndecryptableVersions", ctx, versions, activeDBClient)}
+}
+
+func (_c *CryptographyEngine_FindUndecryptableVersions_Call) Run(run func(ctx context.Context, versions []models.RecordVersion, activeDBClient db.Database)) *CryptographyEngine_FindUndecryptableVersions_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 []models.RecordVersion
+		if args[1] != nil {
+			arg1 = args[1].([]models.RecordVersion)
+		}
+		var arg2 db.Database
+		if args[2] != nil {
+			arg2 = args[2].(db.Database)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
+	})
+	return _c
+}
+
+func (_c *CryptographyEngine_FindUndecryptableVersions_Call) Return(undecryptableVersions []encryption.UndecryptableVersion, err error) *CryptographyEngine_FindUndecryptableVersions_Call {
+	_c.Call.Return(undecryptableVersions, err)
+	return _c
+}
+
+func (_c *CryptographyEngine_FindUndecryptableVersions_Call) RunAndReturn(run func(ctx context.Context, versions []models.RecordVersion, activeDBClient db.Database) ([]encryption.UndecryptableVersion, error)) *CryptographyEngine_FindUndecryptableVersions_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -341,6 +364,50 @@ func (_c *CryptographyEngine_GetEncryptionKey_Call) Return(encryptionKey models.
 }
 
 func (_c *CryptographyEngine_GetEncryptionKey_Call) RunAndReturn(run func(ctx context.Context, keyID string, activeDBClient db.Database) (models.EncryptionKey, error)) *CryptographyEngine_GetEncryptionKey_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// KEKID provides a mock function for the type CryptographyEngine
+func (_mock *CryptographyEngine) KEKID() string {
+	ret := _mock.Called()
+
+	if len(ret) == 0 {
+		panic("no return value specified for KEKID")
+	}
+
+	var r0 string
+	if returnFunc, ok := ret.Get(0).(func() string); ok {
+		r0 = returnFunc()
+	} else {
+		r0 = ret.Get(0).(string)
+	}
+	return r0
+}
+
+// CryptographyEngine_KEKID_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'KEKID'
+type CryptographyEngine_KEKID_Call struct {
+	*mock.Call
+}
+
+// KEKID is a helper method to define mock.On call
+func (_e *CryptographyEngine_Expecter) KEKID() *CryptographyEngine_KEKID_Call {
+	return &CryptographyEngine_KEKID_Call{Call: _e.mock.On("KEKID")}
+}
+
+func (_c *CryptographyEngine_KEKID_Call) Run(run func()) *CryptographyEngine_KEKID_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run()
+	})
+	return _c
+}
+
+func (_c *CryptographyEngine_KEKID_Call) Return(s string) *CryptographyEngine_KEKID_Call {
+	_c.Call.Return(s)
+	return _c
+}
+
+func (_c *CryptographyEngine_KEKID_Call) RunAndReturn(run func() string) *CryptographyEngine_KEKID_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -419,146 +486,68 @@ func (_c *CryptographyEngine_ListEncryptionKeys_Call) RunAndReturn(run func(ctx 
 	return _c
 }
 
-// MarkEncryptionKeyActive provides a mock function for the type CryptographyEngine
-func (_mock *CryptographyEngine) MarkEncryptionKeyActive(ctx context.Context, keyID string, activeDBClient db.Database) (models.EncryptionKey, error) {
-	ret := _mock.Called(ctx, keyID, activeDBClient)
+// LoadKEK provides a mock function for the type CryptographyEngine
+func (_mock *CryptographyEngine) LoadKEK(ctx context.Context, params encryption.KEKParams) (encryption.KEK, error) {
+	ret := _mock.Called(ctx, params)
 
 	if len(ret) == 0 {
-		panic("no return value specified for MarkEncryptionKeyActive")
+		panic("no return value specified for LoadKEK")
 	}
 
-	var r0 models.EncryptionKey
+	var r0 encryption.KEK
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string, db.Database) (models.EncryptionKey, error)); ok {
-		return returnFunc(ctx, keyID, activeDBClient)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, encryption.KEKParams) (encryption.KEK, error)); ok {
+		return returnFunc(ctx, params)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string, db.Database) models.EncryptionKey); ok {
-		r0 = returnFunc(ctx, keyID, activeDBClient)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, encryption.KEKParams) encryption.KEK); ok {
+		r0 = returnFunc(ctx, params)
 	} else {
-		r0 = ret.Get(0).(models.EncryptionKey)
+		r0 = ret.Get(0).(encryption.KEK)
 	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, string, db.Database) error); ok {
-		r1 = returnFunc(ctx, keyID, activeDBClient)
+	if returnFunc, ok := ret.Get(1).(func(context.Context, encryption.KEKParams) error); ok {
+		r1 = returnFunc(ctx, params)
 	} else {
 		r1 = ret.Error(1)
 	}
 	return r0, r1
 }
 
-// CryptographyEngine_MarkEncryptionKeyActive_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'MarkEncryptionKeyActive'
-type CryptographyEngine_MarkEncryptionKeyActive_Call struct {
+// CryptographyEngine_LoadKEK_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'LoadKEK'
+type CryptographyEngine_LoadKEK_Call struct {
 	*mock.Call
 }
 
-// MarkEncryptionKeyActive is a helper method to define mock.On call
+// LoadKEK is a helper method to define mock.On call
 //   - ctx context.Context
-//   - keyID string
-//   - activeDBClient db.Database
-func (_e *CryptographyEngine_Expecter) MarkEncryptionKeyActive(ctx interface{}, keyID interface{}, activeDBClient interface{}) *CryptographyEngine_MarkEncryptionKeyActive_Call {
-	return &CryptographyEngine_MarkEncryptionKeyActive_Call{Call: _e.mock.On("MarkEncryptionKeyActive", ctx, keyID, activeDBClient)}
+//   - params encryption.KEKParams
+func (_e *CryptographyEngine_Expecter) LoadKEK(ctx interface{}, params interface{}) *CryptographyEngine_LoadKEK_Call {
+	return &CryptographyEngine_LoadKEK_Call{Call: _e.mock.On("LoadKEK", ctx, params)}
 }
 
-func (_c *CryptographyEngine_MarkEncryptionKeyActive_Call) Run(run func(ctx context.Context, keyID string, activeDBClient db.Database)) *CryptographyEngine_MarkEncryptionKeyActive_Call {
+func (_c *CryptographyEngine_LoadKEK_Call) Run(run func(ctx context.Context, params encryption.KEKParams)) *CryptographyEngine_LoadKEK_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
 			arg0 = args[0].(context.Context)
 		}
-		var arg1 string
+		var arg1 encryption.KEKParams
 		if args[1] != nil {
-			arg1 = args[1].(string)
-		}
-		var arg2 db.Database
-		if args[2] != nil {
-			arg2 = args[2].(db.Database)
+			arg1 = args[1].(encryption.KEKParams)
 		}
 		run(
 			arg0,
 			arg1,
-			arg2,
 		)
 	})
 	return _c
 }
 
-func (_c *CryptographyEngine_MarkEncryptionKeyActive_Call) Return(encryptionKey models.EncryptionKey, err error) *CryptographyEngine_MarkEncryptionKeyActive_Call {
-	_c.Call.Return(encryptionKey, err)
+func (_c *CryptographyEngine_LoadKEK_Call) Return(kEK encryption.KEK, err error) *CryptographyEngine_LoadKEK_Call {
+	_c.Call.Return(kEK, err)
 	return _c
 }
 
-func (_c *CryptographyEngine_MarkEncryptionKeyActive_Call) RunAndReturn(run func(ctx context.Context, keyID string, activeDBClient db.Database) (models.EncryptionKey, error)) *CryptographyEngine_MarkEncryptionKeyActive_Call {
-	_c.Call.Return(run)
-	return _c
-}
-
-// MarkEncryptionKeyInactive provides a mock function for the type CryptographyEngine
-func (_mock *CryptographyEngine) MarkEncryptionKeyInactive(ctx context.Context, keyID string, activeDBClient db.Database) (models.EncryptionKey, error) {
-	ret := _mock.Called(ctx, keyID, activeDBClient)
-
-	if len(ret) == 0 {
-		panic("no return value specified for MarkEncryptionKeyInactive")
-	}
-
-	var r0 models.EncryptionKey
-	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string, db.Database) (models.EncryptionKey, error)); ok {
-		return returnFunc(ctx, keyID, activeDBClient)
-	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string, db.Database) models.EncryptionKey); ok {
-		r0 = returnFunc(ctx, keyID, activeDBClient)
-	} else {
-		r0 = ret.Get(0).(models.EncryptionKey)
-	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, string, db.Database) error); ok {
-		r1 = returnFunc(ctx, keyID, activeDBClient)
-	} else {
-		r1 = ret.Error(1)
-	}
-	return r0, r1
-}
-
-// CryptographyEngine_MarkEncryptionKeyInactive_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'MarkEncryptionKeyInactive'
-type CryptographyEngine_MarkEncryptionKeyInactive_Call struct {
-	*mock.Call
-}
-
-// MarkEncryptionKeyInactive is a helper method to define mock.On call
-//   - ctx context.Context
-//   - keyID string
-//   - activeDBClient db.Database
-func (_e *CryptographyEngine_Expecter) MarkEncryptionKeyInactive(ctx interface{}, keyID interface{}, activeDBClient interface{}) *CryptographyEngine_MarkEncryptionKeyInactive_Call {
-	return &CryptographyEngine_MarkEncryptionKeyInactive_Call{Call: _e.mock.On("MarkEncryptionKeyInactive", ctx, keyID, activeDBClient)}
-}
-
-func (_c *CryptographyEngine_MarkEncryptionKeyInactive_Call) Run(run func(ctx context.Context, keyID string, activeDBClient db.Database)) *CryptographyEngine_MarkEncryptionKeyInactive_Call {
-	_c.Call.Run(func(args mock.Arguments) {
-		var arg0 context.Context
-		if args[0] != nil {
-			arg0 = args[0].(context.Context)
-		}
-		var arg1 string
-		if args[1] != nil {
-			arg1 = args[1].(string)
-		}
-		var arg2 db.Database
-		if args[2] != nil {
-			arg2 = args[2].(db.Database)
-		}
-		run(
-			arg0,
-			arg1,
-			arg2,
-		)
-	})
-	return _c
-}
-
-func (_c *CryptographyEngine_MarkEncryptionKeyInactive_Call) Return(encryptionKey models.EncryptionKey, err error) *CryptographyEngine_MarkEncryptionKeyInactive_Call {
-	_c.Call.Return(encryptionKey, err)
-	return _c
-}
-
-func (_c *CryptographyEngine_MarkEncryptionKeyInactive_Call) RunAndReturn(run func(ctx context.Context, keyID string, activeDBClient db.Database) (models.EncryptionKey, error)) *CryptographyEngine_MarkEncryptionKeyInactive_Call {
+func (_c *CryptographyEngine_LoadKEK_Call) RunAndReturn(run func(ctx context.Context, params encryption.KEKParams) (encryption.KEK, error)) *CryptographyEngine_LoadKEK_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -625,6 +614,144 @@ func (_c *CryptographyEngine_NewEncryptionKey_Call) Return(encryptionKey models.
 }
 
 func (_c *CryptographyEngine_NewEncryptionKey_Call) RunAndReturn(run func(ctx context.Context, activeDBClient db.Database) (models.EncryptionKey, error)) *CryptographyEngine_NewEncryptionKey_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// ReEncryptRecordVersions provides a mock function for the type CryptographyEngine
+func (_mock *CryptographyEngine) ReEncryptRecordVersions(ctx context.Context, versions []models.RecordVersion, targetKey models.EncryptionKey, activeDBClient db.Database) error {
+	ret := _mock.Called(ctx, versions, targetKey, activeDBClient)
+
+	if len(ret) == 0 {
+		panic("no return value specified for ReEncryptRecordVersions")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, []models.RecordVersion, models.EncryptionKey, db.Database) error); ok {
+		r0 = returnFunc(ctx, versions, targetKey, activeDBClient)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// CryptographyEngine_ReEncryptRecordVersions_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ReEncryptRecordVersions'
+type CryptographyEngine_ReEncryptRecordVersions_Call struct {
+	*mock.Call
+}
+
+// ReEncryptRecordVersions is a helper method to define mock.On call
+//   - ctx context.Context
+//   - versions []models.RecordVersion
+//   - targetKey models.EncryptionKey
+//   - activeDBClient db.Database
+func (_e *CryptographyEngine_Expecter) ReEncryptRecordVersions(ctx interface{}, versions interface{}, targetKey interface{}, activeDBClient interface{}) *CryptographyEngine_ReEncryptRecordVersions_Call {
+	return &CryptographyEngine_ReEncryptRecordVersions_Call{Call: _e.mock.On("ReEncryptRecordVersions", ctx, versions, targetKey, activeDBClient)}
+}
+
+func (_c *CryptographyEngine_ReEncryptRecordVersions_Call) Run(run func(ctx context.Context, versions []models.RecordVersion, targetKey models.EncryptionKey, activeDBClient db.Database)) *CryptographyEngine_ReEncryptRecordVersions_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 []models.RecordVersion
+		if args[1] != nil {
+			arg1 = args[1].([]models.RecordVersion)
+		}
+		var arg2 models.EncryptionKey
+		if args[2] != nil {
+			arg2 = args[2].(models.EncryptionKey)
+		}
+		var arg3 db.Database
+		if args[3] != nil {
+			arg3 = args[3].(db.Database)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+			arg3,
+		)
+	})
+	return _c
+}
+
+func (_c *CryptographyEngine_ReEncryptRecordVersions_Call) Return(err error) *CryptographyEngine_ReEncryptRecordVersions_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *CryptographyEngine_ReEncryptRecordVersions_Call) RunAndReturn(run func(ctx context.Context, versions []models.RecordVersion, targetKey models.EncryptionKey, activeDBClient db.Database) error) *CryptographyEngine_ReEncryptRecordVersions_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// RewrapEncryptionKeys provides a mock function for the type CryptographyEngine
+func (_mock *CryptographyEngine) RewrapEncryptionKeys(ctx context.Context, keys []models.EncryptionKey, newKEK encryption.KEK, activeDBClient db.Database) error {
+	ret := _mock.Called(ctx, keys, newKEK, activeDBClient)
+
+	if len(ret) == 0 {
+		panic("no return value specified for RewrapEncryptionKeys")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, []models.EncryptionKey, encryption.KEK, db.Database) error); ok {
+		r0 = returnFunc(ctx, keys, newKEK, activeDBClient)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// CryptographyEngine_RewrapEncryptionKeys_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'RewrapEncryptionKeys'
+type CryptographyEngine_RewrapEncryptionKeys_Call struct {
+	*mock.Call
+}
+
+// RewrapEncryptionKeys is a helper method to define mock.On call
+//   - ctx context.Context
+//   - keys []models.EncryptionKey
+//   - newKEK encryption.KEK
+//   - activeDBClient db.Database
+func (_e *CryptographyEngine_Expecter) RewrapEncryptionKeys(ctx interface{}, keys interface{}, newKEK interface{}, activeDBClient interface{}) *CryptographyEngine_RewrapEncryptionKeys_Call {
+	return &CryptographyEngine_RewrapEncryptionKeys_Call{Call: _e.mock.On("RewrapEncryptionKeys", ctx, keys, newKEK, activeDBClient)}
+}
+
+func (_c *CryptographyEngine_RewrapEncryptionKeys_Call) Run(run func(ctx context.Context, keys []models.EncryptionKey, newKEK encryption.KEK, activeDBClient db.Database)) *CryptographyEngine_RewrapEncryptionKeys_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 []models.EncryptionKey
+		if args[1] != nil {
+			arg1 = args[1].([]models.EncryptionKey)
+		}
+		var arg2 encryption.KEK
+		if args[2] != nil {
+			arg2 = args[2].(encryption.KEK)
+		}
+		var arg3 db.Database
+		if args[3] != nil {
+			arg3 = args[3].(db.Database)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+			arg3,
+		)
+	})
+	return _c
+}
+
+func (_c *CryptographyEngine_RewrapEncryptionKeys_Call) Return(err error) *CryptographyEngine_RewrapEncryptionKeys_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *CryptographyEngine_RewrapEncryptionKeys_Call) RunAndReturn(run func(ctx context.Context, keys []models.EncryptionKey, newKEK encryption.KEK, activeDBClient db.Database) error) *CryptographyEngine_RewrapEncryptionKeys_Call {
 	_c.Call.Return(run)
 	return _c
 }

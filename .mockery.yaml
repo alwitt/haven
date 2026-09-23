@@ -17,6 +17,9 @@ packages:
   github.com/alwitt/haven/encryption:
     config:
       all: true
+  github.com/alwitt/haven/maintenance:
+    config:
+      all: true
   github.com/alwitt/haven/store:
     config:
       all: true

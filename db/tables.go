@@ -60,10 +60,14 @@ func (RecordDBEntry) TableName() string {
 }
 
 // RecordVersionDBEntry record value DB entry
+//
+// Deleting a record deletes its versions; deleting an encryption key must not. A key can
+// only be removed once no version references it, which is what makes the final step of an
+// encryption key rotation a proof that the rotation completed.
 type RecordVersionDBEntry struct {
 	models.RecordVersion
 	Record RecordDBEntry        `gorm:"constraint:OnDelete:CASCADE;foreignKey:RecordID" validate:"-"`
-	EncKey EncryptionKeyDBEntry `gorm:"constraint:OnDelete:CASCADE;foreignKey:EncKeyID" validate:"-"`
+	EncKey EncryptionKeyDBEntry `gorm:"constraint:OnDelete:RESTRICT;foreignKey:EncKeyID" validate:"-"`
 }
 
 // TableName hard code table name

@@ -2,6 +2,8 @@ package db
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"time"
 
 	"github.com/alwitt/goutils"
@@ -77,18 +79,25 @@ type Database interface {
 	GetSystemParamEntry(ctx context.Context) (models.SystemParams, error)
 
 	/*
-		MarkSystemInitializing mark system is initializing
+		MarkSystemReady mark the system ready for normal operation
 
 			@param ctx context.Context - execution context
 	*/
-	MarkSystemInitializing(ctx context.Context) error
+	MarkSystemReady(ctx context.Context) error
 
 	/*
-		MarkSystemInitializing mark system fully initialized
+		MarkSystemRotatingDEK mark an encryption key rotation in progress
 
 			@param ctx context.Context - execution context
 	*/
-	MarkSystemInitialized(ctx context.Context) error
+	MarkSystemRotatingDEK(ctx context.Context) error
+
+	/*
+		MarkSystemRotatingKEK mark a primary RSA key pair rotation in progress
+
+			@param ctx context.Context - execution context
+	*/
+	MarkSystemRotatingKEK(ctx context.Context) error
 
 	// ------------------------------------------------------------------------------------
 	// Encryption keys
@@ -98,9 +107,12 @@ type Database interface {
 
 			@param ctx context.Context - execution context
 			@param encKeyMaterial string - encrypted key material
+			@param kekID string - ID of the primary RSA key pair which encrypted the key material
 			@returns the key entry
 	*/
-	RecordEncryptionKey(ctx context.Context, encKeyMaterial []byte) (models.EncryptionKey, error)
+	RecordEncryptionKey(
+		ctx context.Context, encKeyMaterial []byte, kekID string,
+	) (models.EncryptionKey, error)
 
 	/*
 		GetEncryptionKey fetch one encryption key
@@ -123,23 +135,34 @@ type Database interface {
 	) ([]models.EncryptionKey, error)
 
 	/*
-		MarkEncryptionKeyActive mark encryption key is active
+		UpdateEncryptionKeyWrapping re-wrap an existing encryption key under a different KEK
+
+		The key keeps its ID, its state and every record version which references it; only
+		the wrapped key material and the ID of the key pair which wrapped it change. The
+		symmetric key itself is untouched, so every cipher text encrypted with it stays valid.
 
 			@param ctx context.Context - execution context
 			@param keyID string - the encryption key ID
+			@param encKeyMaterial []byte - the newly wrapped key material
+			@param kekID string - ID of the primary RSA key pair which encrypted the key material
+			@returns the updated key entry
 	*/
-	MarkEncryptionKeyActive(ctx context.Context, keyID string) error
+	UpdateEncryptionKeyWrapping(
+		ctx context.Context, keyID string, encKeyMaterial []byte, kekID string,
+	) (models.EncryptionKey, error)
 
 	/*
-		MarkEncryptionKeyInactive mark encryption key is inactive
+		MarkEncryptionKeyRetired mark encryption key retired, so it only decrypts
 
 			@param ctx context.Context - execution context
 			@param keyID string - the encryption key ID
 	*/
-	MarkEncryptionKeyInactive(ctx context.Context, keyID string) error
+	MarkEncryptionKeyRetired(ctx context.Context, keyID string) error
 
 	/*
 		DeleteEncryptionKey delete encryption key
+
+		The delete fails while any record version is still encrypted with the key.
 
 			@param ctx context.Context - execution context
 			@param keyID string - the encryption key ID
@@ -205,8 +228,12 @@ type Database interface {
 	/*
 		DefineNewVersionForRecord define new data record version
 
+		The caller assigns the version ID (see NewRecordVersionID) because it is bound into
+		the value's AEAD associated data, so it must be fixed before the value is encrypted.
+
 			@param ctx context.Context - execution context
 			@param record models.Record - the parent data record
+			@param versionID string - the ID of the new version
 			@param encKey models.EncryptionKey - the encryption key that encrypted the data of
 			    this version
 			@param value []byte - the encrypted data of this record version
@@ -217,6 +244,7 @@ type Database interface {
 	DefineNewVersionForRecord(
 		ctx context.Context,
 		record models.Record,
+		versionID string,
 		encKey models.EncryptionKey,
 		value []byte,
 		nonce []byte,
@@ -235,6 +263,39 @@ type Database interface {
 	) (models.RecordVersion, error)
 
 	/*
+		UpdateRecordVersionEncryption replace the encrypted payload of an existing record version
+
+		This re-encrypts a version in place during an encryption key rotation: the version
+		keeps its ID, its parent record and its place in the record's history, and only the
+		encryption columns change.
+
+			@param ctx context.Context - execution context
+			@param versionID string - data record version ID
+			@param encKey models.EncryptionKey - the encryption key which encrypted the new value
+			@param value []byte - the newly encrypted data of this record version
+			@param nonce []byte - the new encryption nonce
+			@returns the updated record version entry
+	*/
+	UpdateRecordVersionEncryption(
+		ctx context.Context,
+		versionID string,
+		encKey models.EncryptionKey,
+		value []byte,
+		nonce []byte,
+	) (models.RecordVersion, error)
+
+	/*
+		PurgeRecordVersion destroy one record version
+
+		This is the only way a version is removed without its record being removed with it.
+		It exists for versions an encryption key rotation cannot decrypt.
+
+			@param ctx context.Context - execution context
+			@param versionID string - data record version ID
+	*/
+	PurgeRecordVersion(ctx context.Context, versionID string) error
+
+	/*
 		ListAllRecordVersions list data record versions
 
 			@param ctx context.Context - execution context
@@ -244,6 +305,17 @@ type Database interface {
 	ListAllRecordVersions(
 		ctx context.Context, filters RecordVersionQueryFilter,
 	) ([]models.RecordVersion, error)
+
+	/*
+		CountRecordVersions count the data record versions matching a filter
+
+		The filter's Limit and Offset are ignored: the count of one page is not a useful number.
+
+			@param ctx context.Context - execution context
+			@param filters RecordVersionQueryFilter - entry counting filter
+			@returns the number of matching record versions
+	*/
+	CountRecordVersions(ctx context.Context, filters RecordVersionQueryFilter) (int64, error)
 
 	/*
 		ListVersionsOfOneRecord list data record versions of a specific record
@@ -298,4 +370,19 @@ func newDatabase(_ context.Context, sqlClient *gorm.DB) (Database, error) {
 	}
 
 	return instance, nil
+}
+
+// notFoundOrError translates the error returned by a single-entry fetch into a
+// goutils.NotFoundError when GORM reports that the record does not exist. Any other
+// error is returned unchanged, and a nil error stays nil.
+func notFoundOrError(err error, entity, id string) error {
+	if err == nil {
+		return nil
+	}
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return goutils.NewNotFoundError(
+			fmt.Sprintf("%s '%s' does not exist", entity, id), err, true,
+		)
+	}
+	return goutils.NewSQLError(fmt.Sprintf("failed to fetch %s '%s'", entity, id), err, true)
 }

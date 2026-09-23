@@ -3,6 +3,7 @@ package store
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -89,6 +90,11 @@ type protectedKVStore struct {
 /*
 NewProtectedKVStore define new protected KV store
 
+The store does not create encryption keys, and refuses to open against a system which is
+not ready for normal operation. Both belong to maintenance actions, and failing here rather
+than at the first write is what gives the embedding application somewhere sensible to report
+the problem.
+
 	@param ctx context.Context - execution context
 	@param persistence db.Client - persistence layer client
 	@param cryptoEngine encryption.CryptographyEngine - cryptography engine
@@ -110,9 +116,23 @@ func NewProtectedKVStore(
 		cryptoEngine: cryptoEngine,
 	}
 
-	// Prepare the working encryption key
+	// Verify the system is open for business, and prepare the working encryption key. Both
+	// read in one transaction, so the key is the one that state refers to.
 	if dbErr := persistence.UseDatabaseInTransaction(
 		ctx, func(dbCtx context.Context, dbClient db.Database) error {
+			params, err := dbClient.GetSystemParamEntry(dbCtx)
+			if err != nil {
+				return goutils.NewPersistenceError(
+					"failed to read the system parameter entry", err, true,
+				)
+			}
+			if params.State != models.SystemStateReady {
+				return goutils.NewRuntimeError(fmt.Sprintf(
+					"system is in state '%s'; complete the outstanding maintenance action before "+
+						"opening a KV store", params.State,
+				), nil, true)
+			}
+
 			activeKeys, err := cryptoEngine.ListEncryptionKeys(
 				dbCtx,
 				db.EncryptionKeyQueryFilter{
@@ -121,19 +141,17 @@ func NewProtectedKVStore(
 				dbClient,
 			)
 			if err != nil {
-				return models.NewPersistenceError("failed to list active encryption keys", err, true)
+				return goutils.NewPersistenceError("failed to list active encryption keys", err, true)
 			}
 
 			if len(activeKeys) == 0 {
-				// Make a new key
-				instance.workingKey, err = cryptoEngine.NewEncryptionKey(dbCtx, dbClient)
-				if err != nil {
-					return models.NewPersistenceError("failed to define new encryption key", err, true)
-				}
-			} else {
-				// Use the newest key
-				instance.workingKey = activeKeys[0]
+				return goutils.NewRuntimeError(
+					"system holds no active encryption key; initialize it before opening a KV store",
+					nil, true,
+				)
 			}
+
+			instance.workingKey = activeKeys[0]
 
 			return nil
 		},
@@ -160,6 +178,13 @@ func (s *protectedKVStore) RecordKeyValue(
 	var recordEntry models.Record
 	var versionEntry models.RecordVersion
 
+	// The AEAD cannot seal an empty message, so refuse before touching the database
+	if len(value) == 0 {
+		return models.Record{}, models.RecordVersion{}, models.NewKVStoreError(
+			fmt.Sprintf("value for key '%s' is empty", key), nil, true,
+		)
+	}
+
 	if dbErr := db.ActiveSessionWrapper(
 		ctx, activeDBClient, s.persistence, func(dbCtx context.Context, dbClient db.Database) error {
 			var err error
@@ -167,25 +192,39 @@ func (s *protectedKVStore) RecordKeyValue(
 			// Prepare data record
 			recordEntry, err = dbClient.GetRecordByName(dbCtx, key)
 			if err != nil {
+				var notFound goutils.NotFoundError
+				if !errors.As(err, &notFound) {
+					return goutils.NewPersistenceError(
+						fmt.Sprintf("failed to fetch record '%s'", key), err, true,
+					)
+				}
 				// Make a new record
 				recordEntry, err = dbClient.DefineNewRecord(dbCtx, key)
 				if err != nil {
-					return models.NewPersistenceError("failed to define new data record", err, true)
+					return goutils.NewPersistenceError("failed to define new data record", err, true)
 				}
 			}
 
+			// The version ID is bound into the cipher text, so it is fixed before encrypting
+			versionID := db.NewRecordVersionID()
+			additional := models.RecordVersion{
+				ID: versionID, RecordID: recordEntry.ID, EncKeyID: s.workingKey.ID,
+			}.AssociatedData()
+
 			// Encrypt the data
-			theKey, encrypted, err := s.cryptoEngine.EncryptData(dbCtx, s.workingKey.ID, value, dbClient)
+			theKey, encrypted, err := s.cryptoEngine.EncryptData(
+				dbCtx, s.workingKey.ID, value, additional, dbClient,
+			)
 			if err != nil {
-				return models.NewPersistenceError("failed to encrypt record value", err, true)
+				return goutils.NewPersistenceError("failed to encrypt record value", err, true)
 			}
 
 			// Prepare new version
 			versionEntry, err = dbClient.DefineNewVersionForRecord(
-				dbCtx, recordEntry, theKey, encrypted.CipherText, encrypted.Nonce, timestamp,
+				dbCtx, recordEntry, versionID, theKey, encrypted.CipherText, encrypted.Nonce, timestamp,
 			)
 			if err != nil {
-				return models.NewPersistenceError("failed to insert new record version", err, true)
+				return goutils.NewPersistenceError("failed to insert new record version", err, true)
 			}
 
 			return nil
@@ -220,14 +259,14 @@ func (s *protectedKVStore) ListKeyVersions(
 			// Prepare data record
 			recordEntry, err = dbClient.GetRecordByName(dbCtx, key)
 			if err != nil {
-				return models.NewPersistenceError(fmt.Sprintf("failed to find key '%s'", key), err, true)
+				return goutils.NewPersistenceError(fmt.Sprintf("failed to find key '%s'", key), err, true)
 			}
 
 			versionEntries, err = dbClient.ListVersionsOfOneRecord(
 				dbCtx, recordEntry, db.RecordVersionQueryFilter{},
 			)
 			if err != nil {
-				return models.NewPersistenceError(
+				return goutils.NewPersistenceError(
 					fmt.Sprintf("failed to list key %s versions", recordEntry.ID), err, true,
 				)
 			}
@@ -261,7 +300,7 @@ func (s *protectedKVStore) GetValueOfKeyAtVersionID(
 			var err error
 			versionEntry, err = dbClient.GetRecordVersion(dbCtx, versionID)
 			if err != nil {
-				return models.NewPersistenceError(
+				return goutils.NewPersistenceError(
 					fmt.Sprintf("failed to find key version %s", versionID), err, true,
 				)
 			}
@@ -277,7 +316,7 @@ func (s *protectedKVStore) GetValueOfKeyAtVersionID(
 	_, plainText, err := s.cryptoEngine.DecryptData(
 		ctx, versionEntry.EncKeyID, encryption.EncryptedData{
 			CipherText: versionEntry.EncValue, Nonce: versionEntry.EncNonce,
-		}, activeDBClient,
+		}, versionEntry.AssociatedData(), activeDBClient,
 	)
 	if err != nil {
 		return nil, models.NewKVStoreError(
@@ -303,7 +342,7 @@ func (s *protectedKVStore) GetValueOfKeyAtVersion(
 	_, plainText, err := s.cryptoEngine.DecryptData(
 		ctx, versionEntry.EncKeyID, encryption.EncryptedData{
 			CipherText: versionEntry.EncValue, Nonce: versionEntry.EncNonce,
-		}, activeDBClient,
+		}, versionEntry.AssociatedData(), activeDBClient,
 	)
 	if err != nil {
 		return nil, models.NewKVStoreError(
@@ -329,11 +368,11 @@ func (s *protectedKVStore) DeleteKey(
 			// Prepare data record
 			recordEntry, err := dbClient.GetRecordByName(dbCtx, key)
 			if err != nil {
-				return models.NewPersistenceError(fmt.Sprintf("failed to find key '%s'", key), err, true)
+				return goutils.NewPersistenceError(fmt.Sprintf("failed to find key '%s'", key), err, true)
 			}
 
 			if err := dbClient.DeleteRecord(dbCtx, recordEntry.ID); err != nil {
-				return models.NewPersistenceError(
+				return goutils.NewPersistenceError(
 					fmt.Sprintf("failed to delete key '%s'", key), err, true,
 				)
 			}

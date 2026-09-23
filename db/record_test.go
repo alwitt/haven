@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/alwitt/goutils"
 	"github.com/alwitt/haven/db"
 	"github.com/alwitt/haven/models"
 	"github.com/apex/log"
@@ -33,6 +34,9 @@ func TestDBCreateDataRecord(t *testing.T) {
 
 	// Create database tables
 	assert.Nil(uut.RunSQLInTransaction(utCtx, db.DefineTables))
+
+	// The record data API is closed outside the READY state
+	markSystemReady(utCtx, t, uut)
 
 	// -------------------------------------------------------------------------
 	// 1 – Define a new data record (test record 1)
@@ -99,12 +103,13 @@ func TestDBCreateDataRecord(t *testing.T) {
 	})
 	assert.Nil(err)
 
-	// 7 – Get back test record 1 (should fail)
+	// 7 – Get back test record 1 (should fail as not found)
 	err = uut.UseDatabaseInTransaction(utCtx, func(ctx context.Context, dbClient db.Database) error {
 		_, err := dbClient.GetRecord(ctx, rec1.ID)
 		return err
 	})
-	assert.Error(err)
+	var notFound goutils.NotFoundError
+	assert.ErrorAs(err, &notFound)
 
 	// -------------------------------------------------------------------------
 	// 8 – Define a new data record using the same name as test record 1 (test record 3)
@@ -135,12 +140,16 @@ func TestDBCreateDataRecord(t *testing.T) {
 	// 10 – List system audit events
 	var events []models.SystemEventAudit
 	err = uut.UseDatabaseInTransaction(utCtx, func(ctx context.Context, dbClient db.Database) error {
-		events, err = dbClient.ListSystemEvents(ctx, db.SystemEventQueryFilter{})
+		events, err = dbClient.ListSystemEvents(ctx, db.SystemEventQueryFilter{
+			EventTypes: []models.SystemEventTypeENUMType{
+				models.SystemEventTypeAddNewRecord, models.SystemEventTypeDeleteRecord,
+			},
+		})
 		return err
 	})
 	assert.Nil(err)
 
-	// There should be 4 events
+	// There should be 4 record events, alongside the system lifecycle events
 	assert.Len(events, 4)
 
 	// Register validator for metadata parsing
@@ -199,6 +208,9 @@ func TestDBFindRecordByName(t *testing.T) {
 
 	// Create database tables
 	assert.Nil(uut.RunSQLInTransaction(utCtx, db.DefineTables))
+
+	// The record data API is closed outside the READY state
+	markSystemReady(utCtx, t, uut)
 
 	// ---------- Create test record 1 ----------
 	var rec1 models.Record
@@ -271,6 +283,14 @@ func TestDBFindRecordByName(t *testing.T) {
 		return nil
 	})
 	assert.Nil(err)
+
+	// ---------- Fetch an unknown name (should fail as not found) ----------
+	err = uut.UseDatabaseInTransaction(utCtx, func(ctx context.Context, dbClient db.Database) error {
+		_, err := dbClient.GetRecordByName(ctx, uuid.NewString())
+		return err
+	})
+	var notFound goutils.NotFoundError
+	assert.ErrorAs(err, &notFound)
 }
 
 // TestDBListRecords – verifies that Database.ListRecords correctly returns
@@ -291,6 +311,9 @@ func TestDBListRecords(t *testing.T) {
 
 	// Create database tables
 	assert.Nil(uut.RunSQLInTransaction(utCtx, db.DefineTables))
+
+	// The record data API is closed outside the READY state
+	markSystemReady(utCtx, t, uut)
 
 	// -------------------------------------------------------------------------
 	// 1 – Define three new data records

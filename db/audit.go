@@ -44,7 +44,7 @@ func (d *databaseImpl) defineNewSystemEvent(
 	}
 
 	if tmp := d.db.Create(&newEntry); tmp.Error != nil {
-		return models.SystemEventAudit{}, models.NewSQLError(
+		return models.SystemEventAudit{}, goutils.NewSQLError(
 			fmt.Sprintf("new system event '%s' insert failed", eventType), tmp.Error, true,
 		)
 	}
@@ -86,7 +86,7 @@ func (d *databaseImpl) ListSystemEvents(
 
 	var entries []SystemEventAuditDBEntry
 	if tmp := query.Find(&entries); tmp.Error != nil {
-		return nil, models.NewSQLError("failed to list captured system events", tmp.Error, true)
+		return nil, goutils.NewSQLError("failed to list captured system events", tmp.Error, true)
 	}
 
 	result := []models.SystemEventAudit{}
