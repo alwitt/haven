@@ -14,20 +14,26 @@ import (
 type SystemEventTypeENUMType string
 
 const (
-	// SystemEventTypeInitializing system is being initialized
-	SystemEventTypeInitializing SystemEventTypeENUMType = "SYSTEM_INITIALIZING"
-
 	// SystemEventTypeInitialized system is initialized
 	SystemEventTypeInitialized SystemEventTypeENUMType = "SYSTEM_INITIALIZED"
+
+	// SystemEventTypeDEKRotationStarted encryption key rotation has begun
+	SystemEventTypeDEKRotationStarted SystemEventTypeENUMType = "DEK_ROTATION_STARTED"
+
+	// SystemEventTypeDEKRotationCompleted encryption key rotation has finished
+	SystemEventTypeDEKRotationCompleted SystemEventTypeENUMType = "DEK_ROTATION_COMPLETED"
+
+	// SystemEventTypeKEKRotationStarted primary RSA key pair rotation has begun
+	SystemEventTypeKEKRotationStarted SystemEventTypeENUMType = "KEK_ROTATION_STARTED"
+
+	// SystemEventTypeKEKRotationCompleted primary RSA key pair rotation has finished
+	SystemEventTypeKEKRotationCompleted SystemEventTypeENUMType = "KEK_ROTATION_COMPLETED"
 
 	// SystemEventTypeNewEncryptionKey new encryption key is being added
 	SystemEventTypeNewEncryptionKey SystemEventTypeENUMType = "ADD_NEW_ENCRYPTION_KEY"
 
-	// SystemEventTypeActivateEncryptionKey encryption key is being activated
-	SystemEventTypeActivateEncryptionKey SystemEventTypeENUMType = "ACTIVATE_ENCRYPTION_KEY"
-
-	// SystemEventTypeDeactivateEncryptionKey encryption key is being deactivated
-	SystemEventTypeDeactivateEncryptionKey SystemEventTypeENUMType = "DEACTIVATE_ENCRYPTION_KEY"
+	// SystemEventTypeRetireEncryptionKey encryption key is being retired to decrypt-only
+	SystemEventTypeRetireEncryptionKey SystemEventTypeENUMType = "RETIRE_ENCRYPTION_KEY"
 
 	// SystemEventTypeDeleteEncryptionKey encryption key is deleted
 	SystemEventTypeDeleteEncryptionKey SystemEventTypeENUMType = "DELETE_ENCRYPTION_KEY"
@@ -37,7 +43,28 @@ const (
 
 	// SystemEventTypeDeleteRecord data record is deleted
 	SystemEventTypeDeleteRecord SystemEventTypeENUMType = "DELETE_RECORD"
+
+	// SystemEventTypePurgeRecordVersion a record version which could not be decrypted is
+	// destroyed
+	SystemEventTypePurgeRecordVersion SystemEventTypeENUMType = "PURGE_UNDECRYPTABLE_VERSION"
 )
+
+// Values all valid SystemEventTypeENUMType values
+func (SystemEventTypeENUMType) Values() []SystemEventTypeENUMType {
+	return []SystemEventTypeENUMType{
+		SystemEventTypeInitialized,
+		SystemEventTypeDEKRotationStarted,
+		SystemEventTypeDEKRotationCompleted,
+		SystemEventTypeKEKRotationStarted,
+		SystemEventTypeKEKRotationCompleted,
+		SystemEventTypeNewEncryptionKey,
+		SystemEventTypeRetireEncryptionKey,
+		SystemEventTypeDeleteEncryptionKey,
+		SystemEventTypeAddNewRecord,
+		SystemEventTypeDeleteRecord,
+		SystemEventTypePurgeRecordVersion,
+	}
+}
 
 // SystemEventAudit recording of events occurring at the system level
 type SystemEventAudit struct {
@@ -59,9 +86,7 @@ func (a SystemEventAudit) ParseMetadata(validator *validator.Validate) (interfac
 	// Encryption key related system audit events
 	case SystemEventTypeNewEncryptionKey:
 		fallthrough
-	case SystemEventTypeActivateEncryptionKey:
-		fallthrough
-	case SystemEventTypeDeactivateEncryptionKey:
+	case SystemEventTypeRetireEncryptionKey:
 		fallthrough
 	case SystemEventTypeDeleteEncryptionKey:
 		var parsed SystemEventEncKeyRelated
@@ -93,6 +118,21 @@ func (a SystemEventAudit) ParseMetadata(validator *validator.Validate) (interfac
 			)
 		}
 		return parsed, nil
+
+	// Data record version related system audit events
+	case SystemEventTypePurgeRecordVersion:
+		var parsed SystemEventRecordVersionRelated
+		if err := json.Unmarshal(a.Metadata, &parsed); err != nil {
+			return nil, goutils.NewConsistencyError(
+				fmt.Sprintf("system event '%s' metadata parse failed", a.EventType), err, true,
+			)
+		}
+		if err := validator.Struct(&parsed); err != nil {
+			return nil, goutils.NewValidationError(
+				fmt.Sprintf("system event '%s' metadata validation failed", a.EventType), err, true,
+			)
+		}
+		return parsed, nil
 	}
 	return nil, nil
 }
@@ -108,5 +148,15 @@ type SystemEventDataRecordRelated struct {
 	// RecordID the data record ID
 	RecordID string `json:"record_id" validate:"required,uuid_rfc4122"`
 	// RecordName the data record name
+	RecordName string `json:"record_name" validate:"required"`
+}
+
+// SystemEventRecordVersionRelated system event metadata related to one data record version
+type SystemEventRecordVersionRelated struct {
+	// VersionID the data record version ID
+	VersionID string `json:"version_id" validate:"required"`
+	// RecordID the parent data record ID
+	RecordID string `json:"record_id" validate:"required,uuid_rfc4122"`
+	// RecordName the parent data record name
 	RecordName string `json:"record_name" validate:"required"`
 }

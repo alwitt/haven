@@ -40,6 +40,72 @@ func (_m *Database) EXPECT() *Database_Expecter {
 	return &Database_Expecter{mock: &_m.Mock}
 }
 
+// CountRecordVersions provides a mock function for the type Database
+func (_mock *Database) CountRecordVersions(ctx context.Context, filters db.RecordVersionQueryFilter) (int64, error) {
+	ret := _mock.Called(ctx, filters)
+
+	if len(ret) == 0 {
+		panic("no return value specified for CountRecordVersions")
+	}
+
+	var r0 int64
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, db.RecordVersionQueryFilter) (int64, error)); ok {
+		return returnFunc(ctx, filters)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, db.RecordVersionQueryFilter) int64); ok {
+		r0 = returnFunc(ctx, filters)
+	} else {
+		r0 = ret.Get(0).(int64)
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, db.RecordVersionQueryFilter) error); ok {
+		r1 = returnFunc(ctx, filters)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// Database_CountRecordVersions_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'CountRecordVersions'
+type Database_CountRecordVersions_Call struct {
+	*mock.Call
+}
+
+// CountRecordVersions is a helper method to define mock.On call
+//   - ctx context.Context
+//   - filters db.RecordVersionQueryFilter
+func (_e *Database_Expecter) CountRecordVersions(ctx interface{}, filters interface{}) *Database_CountRecordVersions_Call {
+	return &Database_CountRecordVersions_Call{Call: _e.mock.On("CountRecordVersions", ctx, filters)}
+}
+
+func (_c *Database_CountRecordVersions_Call) Run(run func(ctx context.Context, filters db.RecordVersionQueryFilter)) *Database_CountRecordVersions_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 db.RecordVersionQueryFilter
+		if args[1] != nil {
+			arg1 = args[1].(db.RecordVersionQueryFilter)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *Database_CountRecordVersions_Call) Return(n int64, err error) *Database_CountRecordVersions_Call {
+	_c.Call.Return(n, err)
+	return _c
+}
+
+func (_c *Database_CountRecordVersions_Call) RunAndReturn(run func(ctx context.Context, filters db.RecordVersionQueryFilter) (int64, error)) *Database_CountRecordVersions_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // DefineNewRecord provides a mock function for the type Database
 func (_mock *Database) DefineNewRecord(ctx context.Context, name string) (models.Record, error) {
 	ret := _mock.Called(ctx, name)
@@ -107,8 +173,8 @@ func (_c *Database_DefineNewRecord_Call) RunAndReturn(run func(ctx context.Conte
 }
 
 // DefineNewVersionForRecord provides a mock function for the type Database
-func (_mock *Database) DefineNewVersionForRecord(ctx context.Context, record models.Record, encKey models.EncryptionKey, value []byte, nonce []byte, timestamp time.Time) (models.RecordVersion, error) {
-	ret := _mock.Called(ctx, record, encKey, value, nonce, timestamp)
+func (_mock *Database) DefineNewVersionForRecord(ctx context.Context, record models.Record, versionID string, encKey models.EncryptionKey, value []byte, nonce []byte, timestamp time.Time) (models.RecordVersion, error) {
+	ret := _mock.Called(ctx, record, versionID, encKey, value, nonce, timestamp)
 
 	if len(ret) == 0 {
 		panic("no return value specified for DefineNewVersionForRecord")
@@ -116,16 +182,16 @@ func (_mock *Database) DefineNewVersionForRecord(ctx context.Context, record mod
 
 	var r0 models.RecordVersion
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, models.Record, models.EncryptionKey, []byte, []byte, time.Time) (models.RecordVersion, error)); ok {
-		return returnFunc(ctx, record, encKey, value, nonce, timestamp)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, models.Record, string, models.EncryptionKey, []byte, []byte, time.Time) (models.RecordVersion, error)); ok {
+		return returnFunc(ctx, record, versionID, encKey, value, nonce, timestamp)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, models.Record, models.EncryptionKey, []byte, []byte, time.Time) models.RecordVersion); ok {
-		r0 = returnFunc(ctx, record, encKey, value, nonce, timestamp)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, models.Record, string, models.EncryptionKey, []byte, []byte, time.Time) models.RecordVersion); ok {
+		r0 = returnFunc(ctx, record, versionID, encKey, value, nonce, timestamp)
 	} else {
 		r0 = ret.Get(0).(models.RecordVersion)
 	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, models.Record, models.EncryptionKey, []byte, []byte, time.Time) error); ok {
-		r1 = returnFunc(ctx, record, encKey, value, nonce, timestamp)
+	if returnFunc, ok := ret.Get(1).(func(context.Context, models.Record, string, models.EncryptionKey, []byte, []byte, time.Time) error); ok {
+		r1 = returnFunc(ctx, record, versionID, encKey, value, nonce, timestamp)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -140,15 +206,16 @@ type Database_DefineNewVersionForRecord_Call struct {
 // DefineNewVersionForRecord is a helper method to define mock.On call
 //   - ctx context.Context
 //   - record models.Record
+//   - versionID string
 //   - encKey models.EncryptionKey
 //   - value []byte
 //   - nonce []byte
 //   - timestamp time.Time
-func (_e *Database_Expecter) DefineNewVersionForRecord(ctx interface{}, record interface{}, encKey interface{}, value interface{}, nonce interface{}, timestamp interface{}) *Database_DefineNewVersionForRecord_Call {
-	return &Database_DefineNewVersionForRecord_Call{Call: _e.mock.On("DefineNewVersionForRecord", ctx, record, encKey, value, nonce, timestamp)}
+func (_e *Database_Expecter) DefineNewVersionForRecord(ctx interface{}, record interface{}, versionID interface{}, encKey interface{}, value interface{}, nonce interface{}, timestamp interface{}) *Database_DefineNewVersionForRecord_Call {
+	return &Database_DefineNewVersionForRecord_Call{Call: _e.mock.On("DefineNewVersionForRecord", ctx, record, versionID, encKey, value, nonce, timestamp)}
 }
 
-func (_c *Database_DefineNewVersionForRecord_Call) Run(run func(ctx context.Context, record models.Record, encKey models.EncryptionKey, value []byte, nonce []byte, timestamp time.Time)) *Database_DefineNewVersionForRecord_Call {
+func (_c *Database_DefineNewVersionForRecord_Call) Run(run func(ctx context.Context, record models.Record, versionID string, encKey models.EncryptionKey, value []byte, nonce []byte, timestamp time.Time)) *Database_DefineNewVersionForRecord_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
@@ -158,21 +225,25 @@ func (_c *Database_DefineNewVersionForRecord_Call) Run(run func(ctx context.Cont
 		if args[1] != nil {
 			arg1 = args[1].(models.Record)
 		}
-		var arg2 models.EncryptionKey
+		var arg2 string
 		if args[2] != nil {
-			arg2 = args[2].(models.EncryptionKey)
+			arg2 = args[2].(string)
 		}
-		var arg3 []byte
+		var arg3 models.EncryptionKey
 		if args[3] != nil {
-			arg3 = args[3].([]byte)
+			arg3 = args[3].(models.EncryptionKey)
 		}
 		var arg4 []byte
 		if args[4] != nil {
 			arg4 = args[4].([]byte)
 		}
-		var arg5 time.Time
+		var arg5 []byte
 		if args[5] != nil {
-			arg5 = args[5].(time.Time)
+			arg5 = args[5].([]byte)
+		}
+		var arg6 time.Time
+		if args[6] != nil {
+			arg6 = args[6].(time.Time)
 		}
 		run(
 			arg0,
@@ -181,6 +252,7 @@ func (_c *Database_DefineNewVersionForRecord_Call) Run(run func(ctx context.Cont
 			arg3,
 			arg4,
 			arg5,
+			arg6,
 		)
 	})
 	return _c
@@ -191,7 +263,7 @@ func (_c *Database_DefineNewVersionForRecord_Call) Return(recordVersion models.R
 	return _c
 }
 
-func (_c *Database_DefineNewVersionForRecord_Call) RunAndReturn(run func(ctx context.Context, record models.Record, encKey models.EncryptionKey, value []byte, nonce []byte, timestamp time.Time) (models.RecordVersion, error)) *Database_DefineNewVersionForRecord_Call {
+func (_c *Database_DefineNewVersionForRecord_Call) RunAndReturn(run func(ctx context.Context, record models.Record, versionID string, encKey models.EncryptionKey, value []byte, nonce []byte, timestamp time.Time) (models.RecordVersion, error)) *Database_DefineNewVersionForRecord_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -1054,12 +1126,12 @@ func (_c *Database_ListVersionsOfOneRecord_Call) RunAndReturn(run func(ctx conte
 	return _c
 }
 
-// MarkEncryptionKeyActive provides a mock function for the type Database
-func (_mock *Database) MarkEncryptionKeyActive(ctx context.Context, keyID string) error {
+// MarkEncryptionKeyRetired provides a mock function for the type Database
+func (_mock *Database) MarkEncryptionKeyRetired(ctx context.Context, keyID string) error {
 	ret := _mock.Called(ctx, keyID)
 
 	if len(ret) == 0 {
-		panic("no return value specified for MarkEncryptionKeyActive")
+		panic("no return value specified for MarkEncryptionKeyRetired")
 	}
 
 	var r0 error
@@ -1071,19 +1143,19 @@ func (_mock *Database) MarkEncryptionKeyActive(ctx context.Context, keyID string
 	return r0
 }
 
-// Database_MarkEncryptionKeyActive_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'MarkEncryptionKeyActive'
-type Database_MarkEncryptionKeyActive_Call struct {
+// Database_MarkEncryptionKeyRetired_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'MarkEncryptionKeyRetired'
+type Database_MarkEncryptionKeyRetired_Call struct {
 	*mock.Call
 }
 
-// MarkEncryptionKeyActive is a helper method to define mock.On call
+// MarkEncryptionKeyRetired is a helper method to define mock.On call
 //   - ctx context.Context
 //   - keyID string
-func (_e *Database_Expecter) MarkEncryptionKeyActive(ctx interface{}, keyID interface{}) *Database_MarkEncryptionKeyActive_Call {
-	return &Database_MarkEncryptionKeyActive_Call{Call: _e.mock.On("MarkEncryptionKeyActive", ctx, keyID)}
+func (_e *Database_Expecter) MarkEncryptionKeyRetired(ctx interface{}, keyID interface{}) *Database_MarkEncryptionKeyRetired_Call {
+	return &Database_MarkEncryptionKeyRetired_Call{Call: _e.mock.On("MarkEncryptionKeyRetired", ctx, keyID)}
 }
 
-func (_c *Database_MarkEncryptionKeyActive_Call) Run(run func(ctx context.Context, keyID string)) *Database_MarkEncryptionKeyActive_Call {
+func (_c *Database_MarkEncryptionKeyRetired_Call) Run(run func(ctx context.Context, keyID string)) *Database_MarkEncryptionKeyRetired_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
@@ -1101,46 +1173,199 @@ func (_c *Database_MarkEncryptionKeyActive_Call) Run(run func(ctx context.Contex
 	return _c
 }
 
-func (_c *Database_MarkEncryptionKeyActive_Call) Return(err error) *Database_MarkEncryptionKeyActive_Call {
+func (_c *Database_MarkEncryptionKeyRetired_Call) Return(err error) *Database_MarkEncryptionKeyRetired_Call {
 	_c.Call.Return(err)
 	return _c
 }
 
-func (_c *Database_MarkEncryptionKeyActive_Call) RunAndReturn(run func(ctx context.Context, keyID string) error) *Database_MarkEncryptionKeyActive_Call {
+func (_c *Database_MarkEncryptionKeyRetired_Call) RunAndReturn(run func(ctx context.Context, keyID string) error) *Database_MarkEncryptionKeyRetired_Call {
 	_c.Call.Return(run)
 	return _c
 }
 
-// MarkEncryptionKeyInactive provides a mock function for the type Database
-func (_mock *Database) MarkEncryptionKeyInactive(ctx context.Context, keyID string) error {
-	ret := _mock.Called(ctx, keyID)
+// MarkSystemReady provides a mock function for the type Database
+func (_mock *Database) MarkSystemReady(ctx context.Context) error {
+	ret := _mock.Called(ctx)
 
 	if len(ret) == 0 {
-		panic("no return value specified for MarkEncryptionKeyInactive")
+		panic("no return value specified for MarkSystemReady")
 	}
 
 	var r0 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string) error); ok {
-		r0 = returnFunc(ctx, keyID)
+	if returnFunc, ok := ret.Get(0).(func(context.Context) error); ok {
+		r0 = returnFunc(ctx)
 	} else {
 		r0 = ret.Error(0)
 	}
 	return r0
 }
 
-// Database_MarkEncryptionKeyInactive_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'MarkEncryptionKeyInactive'
-type Database_MarkEncryptionKeyInactive_Call struct {
+// Database_MarkSystemReady_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'MarkSystemReady'
+type Database_MarkSystemReady_Call struct {
 	*mock.Call
 }
 
-// MarkEncryptionKeyInactive is a helper method to define mock.On call
+// MarkSystemReady is a helper method to define mock.On call
 //   - ctx context.Context
-//   - keyID string
-func (_e *Database_Expecter) MarkEncryptionKeyInactive(ctx interface{}, keyID interface{}) *Database_MarkEncryptionKeyInactive_Call {
-	return &Database_MarkEncryptionKeyInactive_Call{Call: _e.mock.On("MarkEncryptionKeyInactive", ctx, keyID)}
+func (_e *Database_Expecter) MarkSystemReady(ctx interface{}) *Database_MarkSystemReady_Call {
+	return &Database_MarkSystemReady_Call{Call: _e.mock.On("MarkSystemReady", ctx)}
 }
 
-func (_c *Database_MarkEncryptionKeyInactive_Call) Run(run func(ctx context.Context, keyID string)) *Database_MarkEncryptionKeyInactive_Call {
+func (_c *Database_MarkSystemReady_Call) Run(run func(ctx context.Context)) *Database_MarkSystemReady_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		run(
+			arg0,
+		)
+	})
+	return _c
+}
+
+func (_c *Database_MarkSystemReady_Call) Return(err error) *Database_MarkSystemReady_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *Database_MarkSystemReady_Call) RunAndReturn(run func(ctx context.Context) error) *Database_MarkSystemReady_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// MarkSystemRotatingDEK provides a mock function for the type Database
+func (_mock *Database) MarkSystemRotatingDEK(ctx context.Context) error {
+	ret := _mock.Called(ctx)
+
+	if len(ret) == 0 {
+		panic("no return value specified for MarkSystemRotatingDEK")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context) error); ok {
+		r0 = returnFunc(ctx)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// Database_MarkSystemRotatingDEK_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'MarkSystemRotatingDEK'
+type Database_MarkSystemRotatingDEK_Call struct {
+	*mock.Call
+}
+
+// MarkSystemRotatingDEK is a helper method to define mock.On call
+//   - ctx context.Context
+func (_e *Database_Expecter) MarkSystemRotatingDEK(ctx interface{}) *Database_MarkSystemRotatingDEK_Call {
+	return &Database_MarkSystemRotatingDEK_Call{Call: _e.mock.On("MarkSystemRotatingDEK", ctx)}
+}
+
+func (_c *Database_MarkSystemRotatingDEK_Call) Run(run func(ctx context.Context)) *Database_MarkSystemRotatingDEK_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		run(
+			arg0,
+		)
+	})
+	return _c
+}
+
+func (_c *Database_MarkSystemRotatingDEK_Call) Return(err error) *Database_MarkSystemRotatingDEK_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *Database_MarkSystemRotatingDEK_Call) RunAndReturn(run func(ctx context.Context) error) *Database_MarkSystemRotatingDEK_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// MarkSystemRotatingKEK provides a mock function for the type Database
+func (_mock *Database) MarkSystemRotatingKEK(ctx context.Context) error {
+	ret := _mock.Called(ctx)
+
+	if len(ret) == 0 {
+		panic("no return value specified for MarkSystemRotatingKEK")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context) error); ok {
+		r0 = returnFunc(ctx)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// Database_MarkSystemRotatingKEK_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'MarkSystemRotatingKEK'
+type Database_MarkSystemRotatingKEK_Call struct {
+	*mock.Call
+}
+
+// MarkSystemRotatingKEK is a helper method to define mock.On call
+//   - ctx context.Context
+func (_e *Database_Expecter) MarkSystemRotatingKEK(ctx interface{}) *Database_MarkSystemRotatingKEK_Call {
+	return &Database_MarkSystemRotatingKEK_Call{Call: _e.mock.On("MarkSystemRotatingKEK", ctx)}
+}
+
+func (_c *Database_MarkSystemRotatingKEK_Call) Run(run func(ctx context.Context)) *Database_MarkSystemRotatingKEK_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		run(
+			arg0,
+		)
+	})
+	return _c
+}
+
+func (_c *Database_MarkSystemRotatingKEK_Call) Return(err error) *Database_MarkSystemRotatingKEK_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *Database_MarkSystemRotatingKEK_Call) RunAndReturn(run func(ctx context.Context) error) *Database_MarkSystemRotatingKEK_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// PurgeRecordVersion provides a mock function for the type Database
+func (_mock *Database) PurgeRecordVersion(ctx context.Context, versionID string) error {
+	ret := _mock.Called(ctx, versionID)
+
+	if len(ret) == 0 {
+		panic("no return value specified for PurgeRecordVersion")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string) error); ok {
+		r0 = returnFunc(ctx, versionID)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// Database_PurgeRecordVersion_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'PurgeRecordVersion'
+type Database_PurgeRecordVersion_Call struct {
+	*mock.Call
+}
+
+// PurgeRecordVersion is a helper method to define mock.On call
+//   - ctx context.Context
+//   - versionID string
+func (_e *Database_Expecter) PurgeRecordVersion(ctx interface{}, versionID interface{}) *Database_PurgeRecordVersion_Call {
+	return &Database_PurgeRecordVersion_Call{Call: _e.mock.On("PurgeRecordVersion", ctx, versionID)}
+}
+
+func (_c *Database_PurgeRecordVersion_Call) Run(run func(ctx context.Context, versionID string)) *Database_PurgeRecordVersion_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
@@ -1158,121 +1383,19 @@ func (_c *Database_MarkEncryptionKeyInactive_Call) Run(run func(ctx context.Cont
 	return _c
 }
 
-func (_c *Database_MarkEncryptionKeyInactive_Call) Return(err error) *Database_MarkEncryptionKeyInactive_Call {
+func (_c *Database_PurgeRecordVersion_Call) Return(err error) *Database_PurgeRecordVersion_Call {
 	_c.Call.Return(err)
 	return _c
 }
 
-func (_c *Database_MarkEncryptionKeyInactive_Call) RunAndReturn(run func(ctx context.Context, keyID string) error) *Database_MarkEncryptionKeyInactive_Call {
-	_c.Call.Return(run)
-	return _c
-}
-
-// MarkSystemInitialized provides a mock function for the type Database
-func (_mock *Database) MarkSystemInitialized(ctx context.Context) error {
-	ret := _mock.Called(ctx)
-
-	if len(ret) == 0 {
-		panic("no return value specified for MarkSystemInitialized")
-	}
-
-	var r0 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context) error); ok {
-		r0 = returnFunc(ctx)
-	} else {
-		r0 = ret.Error(0)
-	}
-	return r0
-}
-
-// Database_MarkSystemInitialized_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'MarkSystemInitialized'
-type Database_MarkSystemInitialized_Call struct {
-	*mock.Call
-}
-
-// MarkSystemInitialized is a helper method to define mock.On call
-//   - ctx context.Context
-func (_e *Database_Expecter) MarkSystemInitialized(ctx interface{}) *Database_MarkSystemInitialized_Call {
-	return &Database_MarkSystemInitialized_Call{Call: _e.mock.On("MarkSystemInitialized", ctx)}
-}
-
-func (_c *Database_MarkSystemInitialized_Call) Run(run func(ctx context.Context)) *Database_MarkSystemInitialized_Call {
-	_c.Call.Run(func(args mock.Arguments) {
-		var arg0 context.Context
-		if args[0] != nil {
-			arg0 = args[0].(context.Context)
-		}
-		run(
-			arg0,
-		)
-	})
-	return _c
-}
-
-func (_c *Database_MarkSystemInitialized_Call) Return(err error) *Database_MarkSystemInitialized_Call {
-	_c.Call.Return(err)
-	return _c
-}
-
-func (_c *Database_MarkSystemInitialized_Call) RunAndReturn(run func(ctx context.Context) error) *Database_MarkSystemInitialized_Call {
-	_c.Call.Return(run)
-	return _c
-}
-
-// MarkSystemInitializing provides a mock function for the type Database
-func (_mock *Database) MarkSystemInitializing(ctx context.Context) error {
-	ret := _mock.Called(ctx)
-
-	if len(ret) == 0 {
-		panic("no return value specified for MarkSystemInitializing")
-	}
-
-	var r0 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context) error); ok {
-		r0 = returnFunc(ctx)
-	} else {
-		r0 = ret.Error(0)
-	}
-	return r0
-}
-
-// Database_MarkSystemInitializing_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'MarkSystemInitializing'
-type Database_MarkSystemInitializing_Call struct {
-	*mock.Call
-}
-
-// MarkSystemInitializing is a helper method to define mock.On call
-//   - ctx context.Context
-func (_e *Database_Expecter) MarkSystemInitializing(ctx interface{}) *Database_MarkSystemInitializing_Call {
-	return &Database_MarkSystemInitializing_Call{Call: _e.mock.On("MarkSystemInitializing", ctx)}
-}
-
-func (_c *Database_MarkSystemInitializing_Call) Run(run func(ctx context.Context)) *Database_MarkSystemInitializing_Call {
-	_c.Call.Run(func(args mock.Arguments) {
-		var arg0 context.Context
-		if args[0] != nil {
-			arg0 = args[0].(context.Context)
-		}
-		run(
-			arg0,
-		)
-	})
-	return _c
-}
-
-func (_c *Database_MarkSystemInitializing_Call) Return(err error) *Database_MarkSystemInitializing_Call {
-	_c.Call.Return(err)
-	return _c
-}
-
-func (_c *Database_MarkSystemInitializing_Call) RunAndReturn(run func(ctx context.Context) error) *Database_MarkSystemInitializing_Call {
+func (_c *Database_PurgeRecordVersion_Call) RunAndReturn(run func(ctx context.Context, versionID string) error) *Database_PurgeRecordVersion_Call {
 	_c.Call.Return(run)
 	return _c
 }
 
 // RecordEncryptionKey provides a mock function for the type Database
-func (_mock *Database) RecordEncryptionKey(ctx context.Context, encKeyMaterial []byte) (models.EncryptionKey, error) {
-	ret := _mock.Called(ctx, encKeyMaterial)
+func (_mock *Database) RecordEncryptionKey(ctx context.Context, encKeyMaterial []byte, kekID string) (models.EncryptionKey, error) {
+	ret := _mock.Called(ctx, encKeyMaterial, kekID)
 
 	if len(ret) == 0 {
 		panic("no return value specified for RecordEncryptionKey")
@@ -1280,16 +1403,16 @@ func (_mock *Database) RecordEncryptionKey(ctx context.Context, encKeyMaterial [
 
 	var r0 models.EncryptionKey
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, []byte) (models.EncryptionKey, error)); ok {
-		return returnFunc(ctx, encKeyMaterial)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, []byte, string) (models.EncryptionKey, error)); ok {
+		return returnFunc(ctx, encKeyMaterial, kekID)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, []byte) models.EncryptionKey); ok {
-		r0 = returnFunc(ctx, encKeyMaterial)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, []byte, string) models.EncryptionKey); ok {
+		r0 = returnFunc(ctx, encKeyMaterial, kekID)
 	} else {
 		r0 = ret.Get(0).(models.EncryptionKey)
 	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, []byte) error); ok {
-		r1 = returnFunc(ctx, encKeyMaterial)
+	if returnFunc, ok := ret.Get(1).(func(context.Context, []byte, string) error); ok {
+		r1 = returnFunc(ctx, encKeyMaterial, kekID)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -1304,11 +1427,12 @@ type Database_RecordEncryptionKey_Call struct {
 // RecordEncryptionKey is a helper method to define mock.On call
 //   - ctx context.Context
 //   - encKeyMaterial []byte
-func (_e *Database_Expecter) RecordEncryptionKey(ctx interface{}, encKeyMaterial interface{}) *Database_RecordEncryptionKey_Call {
-	return &Database_RecordEncryptionKey_Call{Call: _e.mock.On("RecordEncryptionKey", ctx, encKeyMaterial)}
+//   - kekID string
+func (_e *Database_Expecter) RecordEncryptionKey(ctx interface{}, encKeyMaterial interface{}, kekID interface{}) *Database_RecordEncryptionKey_Call {
+	return &Database_RecordEncryptionKey_Call{Call: _e.mock.On("RecordEncryptionKey", ctx, encKeyMaterial, kekID)}
 }
 
-func (_c *Database_RecordEncryptionKey_Call) Run(run func(ctx context.Context, encKeyMaterial []byte)) *Database_RecordEncryptionKey_Call {
+func (_c *Database_RecordEncryptionKey_Call) Run(run func(ctx context.Context, encKeyMaterial []byte, kekID string)) *Database_RecordEncryptionKey_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
@@ -1318,9 +1442,14 @@ func (_c *Database_RecordEncryptionKey_Call) Run(run func(ctx context.Context, e
 		if args[1] != nil {
 			arg1 = args[1].([]byte)
 		}
+		var arg2 string
+		if args[2] != nil {
+			arg2 = args[2].(string)
+		}
 		run(
 			arg0,
 			arg1,
+			arg2,
 		)
 	})
 	return _c
@@ -1331,7 +1460,169 @@ func (_c *Database_RecordEncryptionKey_Call) Return(encryptionKey models.Encrypt
 	return _c
 }
 
-func (_c *Database_RecordEncryptionKey_Call) RunAndReturn(run func(ctx context.Context, encKeyMaterial []byte) (models.EncryptionKey, error)) *Database_RecordEncryptionKey_Call {
+func (_c *Database_RecordEncryptionKey_Call) RunAndReturn(run func(ctx context.Context, encKeyMaterial []byte, kekID string) (models.EncryptionKey, error)) *Database_RecordEncryptionKey_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// UpdateEncryptionKeyWrapping provides a mock function for the type Database
+func (_mock *Database) UpdateEncryptionKeyWrapping(ctx context.Context, keyID string, encKeyMaterial []byte, kekID string) (models.EncryptionKey, error) {
+	ret := _mock.Called(ctx, keyID, encKeyMaterial, kekID)
+
+	if len(ret) == 0 {
+		panic("no return value specified for UpdateEncryptionKeyWrapping")
+	}
+
+	var r0 models.EncryptionKey
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, []byte, string) (models.EncryptionKey, error)); ok {
+		return returnFunc(ctx, keyID, encKeyMaterial, kekID)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, []byte, string) models.EncryptionKey); ok {
+		r0 = returnFunc(ctx, keyID, encKeyMaterial, kekID)
+	} else {
+		r0 = ret.Get(0).(models.EncryptionKey)
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, string, []byte, string) error); ok {
+		r1 = returnFunc(ctx, keyID, encKeyMaterial, kekID)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// Database_UpdateEncryptionKeyWrapping_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'UpdateEncryptionKeyWrapping'
+type Database_UpdateEncryptionKeyWrapping_Call struct {
+	*mock.Call
+}
+
+// UpdateEncryptionKeyWrapping is a helper method to define mock.On call
+//   - ctx context.Context
+//   - keyID string
+//   - encKeyMaterial []byte
+//   - kekID string
+func (_e *Database_Expecter) UpdateEncryptionKeyWrapping(ctx interface{}, keyID interface{}, encKeyMaterial interface{}, kekID interface{}) *Database_UpdateEncryptionKeyWrapping_Call {
+	return &Database_UpdateEncryptionKeyWrapping_Call{Call: _e.mock.On("UpdateEncryptionKeyWrapping", ctx, keyID, encKeyMaterial, kekID)}
+}
+
+func (_c *Database_UpdateEncryptionKeyWrapping_Call) Run(run func(ctx context.Context, keyID string, encKeyMaterial []byte, kekID string)) *Database_UpdateEncryptionKeyWrapping_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 []byte
+		if args[2] != nil {
+			arg2 = args[2].([]byte)
+		}
+		var arg3 string
+		if args[3] != nil {
+			arg3 = args[3].(string)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+			arg3,
+		)
+	})
+	return _c
+}
+
+func (_c *Database_UpdateEncryptionKeyWrapping_Call) Return(encryptionKey models.EncryptionKey, err error) *Database_UpdateEncryptionKeyWrapping_Call {
+	_c.Call.Return(encryptionKey, err)
+	return _c
+}
+
+func (_c *Database_UpdateEncryptionKeyWrapping_Call) RunAndReturn(run func(ctx context.Context, keyID string, encKeyMaterial []byte, kekID string) (models.EncryptionKey, error)) *Database_UpdateEncryptionKeyWrapping_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// UpdateRecordVersionEncryption provides a mock function for the type Database
+func (_mock *Database) UpdateRecordVersionEncryption(ctx context.Context, versionID string, encKey models.EncryptionKey, value []byte, nonce []byte) (models.RecordVersion, error) {
+	ret := _mock.Called(ctx, versionID, encKey, value, nonce)
+
+	if len(ret) == 0 {
+		panic("no return value specified for UpdateRecordVersionEncryption")
+	}
+
+	var r0 models.RecordVersion
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, models.EncryptionKey, []byte, []byte) (models.RecordVersion, error)); ok {
+		return returnFunc(ctx, versionID, encKey, value, nonce)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, models.EncryptionKey, []byte, []byte) models.RecordVersion); ok {
+		r0 = returnFunc(ctx, versionID, encKey, value, nonce)
+	} else {
+		r0 = ret.Get(0).(models.RecordVersion)
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, string, models.EncryptionKey, []byte, []byte) error); ok {
+		r1 = returnFunc(ctx, versionID, encKey, value, nonce)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// Database_UpdateRecordVersionEncryption_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'UpdateRecordVersionEncryption'
+type Database_UpdateRecordVersionEncryption_Call struct {
+	*mock.Call
+}
+
+// UpdateRecordVersionEncryption is a helper method to define mock.On call
+//   - ctx context.Context
+//   - versionID string
+//   - encKey models.EncryptionKey
+//   - value []byte
+//   - nonce []byte
+func (_e *Database_Expecter) UpdateRecordVersionEncryption(ctx interface{}, versionID interface{}, encKey interface{}, value interface{}, nonce interface{}) *Database_UpdateRecordVersionEncryption_Call {
+	return &Database_UpdateRecordVersionEncryption_Call{Call: _e.mock.On("UpdateRecordVersionEncryption", ctx, versionID, encKey, value, nonce)}
+}
+
+func (_c *Database_UpdateRecordVersionEncryption_Call) Run(run func(ctx context.Context, versionID string, encKey models.EncryptionKey, value []byte, nonce []byte)) *Database_UpdateRecordVersionEncryption_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 models.EncryptionKey
+		if args[2] != nil {
+			arg2 = args[2].(models.EncryptionKey)
+		}
+		var arg3 []byte
+		if args[3] != nil {
+			arg3 = args[3].([]byte)
+		}
+		var arg4 []byte
+		if args[4] != nil {
+			arg4 = args[4].([]byte)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+			arg3,
+			arg4,
+		)
+	})
+	return _c
+}
+
+func (_c *Database_UpdateRecordVersionEncryption_Call) Return(recordVersion models.RecordVersion, err error) *Database_UpdateRecordVersionEncryption_Call {
+	_c.Call.Return(recordVersion, err)
+	return _c
+}
+
+func (_c *Database_UpdateRecordVersionEncryption_Call) RunAndReturn(run func(ctx context.Context, versionID string, encKey models.EncryptionKey, value []byte, nonce []byte) (models.RecordVersion, error)) *Database_UpdateRecordVersionEncryption_Call {
 	_c.Call.Return(run)
 	return _c
 }

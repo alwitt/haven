@@ -2,13 +2,11 @@ package db
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
 	"github.com/alwitt/goutils"
 	"github.com/alwitt/haven/models"
 	"github.com/google/uuid"
-	"gorm.io/gorm"
 )
 
 /*
@@ -16,15 +14,17 @@ RecordEncryptionKey record an encrypted symmetric encryption key
 
 	@param ctx context.Context - execution context
 	@param encKeyMaterial string - encrypted key material
+	@param kekID string - ID of the primary RSA key pair which encrypted the key material
 	@returns the key entry
 */
 func (d *databaseImpl) RecordEncryptionKey(
-	_ context.Context, encKeyMaterial []byte,
+	_ context.Context, encKeyMaterial []byte, kekID string,
 ) (models.EncryptionKey, error) {
 	newEntry := EncryptionKeyDBEntry{
 		EncryptionKey: models.EncryptionKey{
 			ID:             uuid.NewString(),
 			EncKeyMaterial: encKeyMaterial,
+			KekID:          kekID,
 			State:          models.EncryptionKeyStateActive,
 		},
 	}
@@ -36,7 +36,7 @@ func (d *databaseImpl) RecordEncryptionKey(
 	}
 
 	if tmp := d.db.Create(&newEntry); tmp.Error != nil {
-		return models.EncryptionKey{}, models.NewSQLError(
+		return models.EncryptionKey{}, goutils.NewSQLError(
 			"new encryption key entry insert failed", tmp.Error, true,
 		)
 	}
@@ -56,17 +56,8 @@ func (d *databaseImpl) RecordEncryptionKey(
 // getEncryptionKey fetch one encryption key
 func (d *databaseImpl) getEncryptionKey(keyID string) (EncryptionKeyDBEntry, error) {
 	var entry EncryptionKeyDBEntry
-	if err := d.db.Where("id = ?", keyID).First(&entry).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return entry, goutils.NewNotFoundError(
-				fmt.Sprintf("encryption key %s does not exist", keyID), err, true,
-			)
-		}
-		return entry, models.NewSQLError(
-			fmt.Sprintf("failed to fetch encryption key %s", keyID), err, true,
-		)
-	}
-	return entry, nil
+	tmp := d.db.Where("id = ?", keyID).First(&entry)
+	return entry, notFoundOrError(tmp.Error, "encryption key", keyID)
 }
 
 /*
@@ -115,7 +106,7 @@ func (d *databaseImpl) ListEncryptionKeys(
 
 	var entries []EncryptionKeyDBEntry
 	if tmp := query.Find(&entries); tmp.Error != nil {
-		return nil, models.NewSQLError("failed to list encryption keys", tmp.Error, true)
+		return nil, goutils.NewSQLError("failed to list encryption keys", tmp.Error, true)
 	}
 
 	result := []models.EncryptionKey{}
@@ -124,6 +115,49 @@ func (d *databaseImpl) ListEncryptionKeys(
 	}
 
 	return result, nil
+}
+
+/*
+UpdateEncryptionKeyWrapping re-wrap an existing encryption key under a different KEK
+
+The key keeps its ID, its state and every record version which references it; only the
+wrapped key material and the ID of the key pair which wrapped it change. The symmetric key
+itself is untouched, so every cipher text encrypted with it stays valid.
+
+	@param ctx context.Context - execution context
+	@param keyID string - the encryption key ID
+	@param encKeyMaterial []byte - the newly wrapped key material
+	@param kekID string - ID of the primary RSA key pair which encrypted the key material
+	@returns the updated key entry
+*/
+func (d *databaseImpl) UpdateEncryptionKeyWrapping(
+	_ context.Context, keyID string, encKeyMaterial []byte, kekID string,
+) (models.EncryptionKey, error) {
+	entry, err := d.getEncryptionKey(keyID)
+	if err != nil {
+		return models.EncryptionKey{}, err
+	}
+
+	entry.EncKeyMaterial = encKeyMaterial
+	entry.KekID = kekID
+
+	if err := d.validator.Struct(&entry); err != nil {
+		return models.EncryptionKey{}, goutils.NewValidationError(
+			fmt.Sprintf("re-wrapped encryption key %s is invalid", keyID), err, true,
+		)
+	}
+
+	if tmp := d.db.Model(&EncryptionKeyDBEntry{}).
+		Where("id = ?", keyID).
+		Updates(map[string]interface{}{
+			"enc_key_material": encKeyMaterial, "kek_id": kekID,
+		}); tmp.Error != nil {
+		return models.EncryptionKey{}, goutils.NewSQLError(
+			fmt.Sprintf("encryption key %s re-wrap update failed", keyID), tmp.Error, true,
+		)
+	}
+
+	return entry.EncryptionKey, nil
 }
 
 // updateEncKeyState update the encryption key entry state
@@ -148,21 +182,13 @@ func (d *databaseImpl) updateEncKeyState(
 
 	entry.State = newState
 	if tmp := d.db.Updates(&entry); tmp.Error != nil {
-		return models.NewSQLError("encryption key state change update failed", tmp.Error, true)
+		return goutils.NewSQLError("encryption key state change update failed", tmp.Error, true)
 	}
 
-	// record this event
-	var systemEventType models.SystemEventTypeENUMType
-	switch newState {
-	case models.EncryptionKeyStateActive:
-		systemEventType = models.SystemEventTypeActivateEncryptionKey
-	case models.EncryptionKeyStateInactive:
-		systemEventType = models.SystemEventTypeDeactivateEncryptionKey
-	}
-
-	// Record this event
+	// Record this event. Retirement is the only transition a key makes, so it is the only
+	// event to select.
 	if _, err := d.defineNewSystemEvent(
-		systemEventType, models.SystemEventEncKeyRelated{KeyID: keyID},
+		models.SystemEventTypeRetireEncryptionKey, models.SystemEventEncKeyRelated{KeyID: keyID},
 	); err != nil {
 		return goutils.NewRuntimeError(
 			"failed to log encryption key state change audit event", err, true,
@@ -173,27 +199,20 @@ func (d *databaseImpl) updateEncKeyState(
 }
 
 /*
-MarkEncryptionKeyActive mark encryption key is active
+MarkEncryptionKeyRetired mark encryption key retired, so it only decrypts
 
 	@param ctx context.Context - execution context
 	@param keyID string - the encryption key ID
 */
-func (d *databaseImpl) MarkEncryptionKeyActive(_ context.Context, keyID string) error {
-	return d.updateEncKeyState(keyID, models.EncryptionKeyStateActive)
-}
-
-/*
-MarkEncryptionKeyInactive mark encryption key is inactive
-
-	@param ctx context.Context - execution context
-	@param keyID string - the encryption key ID
-*/
-func (d *databaseImpl) MarkEncryptionKeyInactive(_ context.Context, keyID string) error {
-	return d.updateEncKeyState(keyID, models.EncryptionKeyStateInactive)
+func (d *databaseImpl) MarkEncryptionKeyRetired(_ context.Context, keyID string) error {
+	return d.updateEncKeyState(keyID, models.EncryptionKeyStateRetired)
 }
 
 /*
 DeleteEncryptionKey delete encryption key
+
+The delete fails while any record version is still encrypted with the key, so a key can
+only be removed once its data has been moved onto another one.
 
 	@param ctx context.Context - execution context
 	@param keyID string - the encryption key ID
@@ -207,7 +226,7 @@ func (d *databaseImpl) DeleteEncryptionKey(_ context.Context, keyID string) erro
 	}
 
 	if tmp := d.db.Delete(&entry); tmp.Error != nil {
-		return models.NewSQLError(
+		return goutils.NewSQLError(
 			fmt.Sprintf("failed to delete encryption key %s", keyID), tmp.Error, true,
 		)
 	}

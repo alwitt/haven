@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/alwitt/goutils"
 	"github.com/alwitt/haven/db"
 	"github.com/alwitt/haven/models"
 	"github.com/apex/log"
@@ -42,6 +43,9 @@ func TestDBCreateDataRecordVersion(t *testing.T) {
 	// Create database tables
 	assert.Nil(uut.RunSQLInTransaction(utCtx, db.DefineTables))
 
+	// The record data API is closed outside the READY state
+	markSystemReady(utCtx, t, uut)
+
 	// --------------------------------------------------
 	// 1 – Define a new data record (test record 1)
 	var rec1 models.Record
@@ -61,7 +65,7 @@ func TestDBCreateDataRecordVersion(t *testing.T) {
 	var key1 models.EncryptionKey
 	keyMaterial1 := []byte(uuid.NewString())
 	err = uut.UseDatabaseInTransaction(utCtx, func(ctx context.Context, dbClient db.Database) error {
-		ek, err := dbClient.RecordEncryptionKey(ctx, keyMaterial1)
+		ek, err := dbClient.RecordEncryptionKey(ctx, keyMaterial1, testKekID)
 		if err != nil {
 			return err
 		}
@@ -73,12 +77,13 @@ func TestDBCreateDataRecordVersion(t *testing.T) {
 	// --------------------------------------------------
 	// 3 – Define a new data record version for test record 1 (test version 1)
 	var ver1 models.RecordVersion
+	version1ID := db.NewRecordVersionID()
 	version1Value := []byte(uuid.NewString())
 	version1Nonce := []byte(uuid.NewString())
 	version1Timestamp := time.Now().UTC()
 	err = uut.UseDatabaseInTransaction(utCtx, func(ctx context.Context, dbClient db.Database) error {
 		v, err := dbClient.DefineNewVersionForRecord(
-			ctx, rec1, key1, version1Value, version1Nonce, version1Timestamp,
+			ctx, rec1, version1ID, key1, version1Value, version1Nonce, version1Timestamp,
 		)
 		if err != nil {
 			return err
@@ -87,6 +92,7 @@ func TestDBCreateDataRecordVersion(t *testing.T) {
 		return nil
 	})
 	assert.Nil(err)
+	assert.Equal(version1ID, ver1.ID)
 
 	// --------------------------------------------------
 	// 4 – Get back test version 1 and verify its content
@@ -95,6 +101,7 @@ func TestDBCreateDataRecordVersion(t *testing.T) {
 		if err != nil {
 			return err
 		}
+		assert.Equal(version1ID, v.ID)
 		assert.Equal(rec1.ID, v.RecordID)
 		assert.Equal(key1.ID, v.EncKeyID)
 		assert.Equal(version1Value, v.EncValue)
@@ -111,7 +118,7 @@ func TestDBCreateDataRecordVersion(t *testing.T) {
 	version2Timestamp := time.Now().UTC()
 	err = uut.UseDatabaseInTransaction(utCtx, func(ctx context.Context, dbClient db.Database) error {
 		v, err := dbClient.DefineNewVersionForRecord(
-			ctx, rec1, key1, version2Value, version2Nonce, version2Timestamp,
+			ctx, rec1, db.NewRecordVersionID(), key1, version2Value, version2Nonce, version2Timestamp,
 		)
 		if err != nil {
 			return err
@@ -171,6 +178,9 @@ func TestDBCreateDataRecordVersionDelete(t *testing.T) {
 	// Create database tables
 	assert.Nil(uut.RunSQLInTransaction(utCtx, db.DefineTables))
 
+	// The record data API is closed outside the READY state
+	markSystemReady(utCtx, t, uut)
+
 	// ----- 1 – Define a new data record (test record 1) -----
 	var rec1 models.Record
 	rec1Name := uuid.NewString()
@@ -201,7 +211,7 @@ func TestDBCreateDataRecordVersionDelete(t *testing.T) {
 	var key1 models.EncryptionKey
 	keyMaterial1 := []byte(uuid.NewString())
 	err = uut.UseDatabaseInTransaction(utCtx, func(ctx context.Context, dbClient db.Database) error {
-		ek, err := dbClient.RecordEncryptionKey(ctx, keyMaterial1)
+		ek, err := dbClient.RecordEncryptionKey(ctx, keyMaterial1, testKekID)
 		if err != nil {
 			return err
 		}
@@ -217,7 +227,7 @@ func TestDBCreateDataRecordVersionDelete(t *testing.T) {
 	version1Timestamp := time.Now().UTC()
 	err = uut.UseDatabaseInTransaction(utCtx, func(ctx context.Context, dbClient db.Database) error {
 		v, err := dbClient.DefineNewVersionForRecord(
-			ctx, rec1, key1, version1Value, version1Nonce, version1Timestamp,
+			ctx, rec1, db.NewRecordVersionID(), key1, version1Value, version1Nonce, version1Timestamp,
 		)
 		if err != nil {
 			return err
@@ -248,7 +258,7 @@ func TestDBCreateDataRecordVersionDelete(t *testing.T) {
 	version2Timestamp := time.Now().UTC()
 	err = uut.UseDatabaseInTransaction(utCtx, func(ctx context.Context, dbClient db.Database) error {
 		v, err := dbClient.DefineNewVersionForRecord(
-			ctx, rec2, key1, version2Value, version2Nonce, version2Timestamp,
+			ctx, rec2, db.NewRecordVersionID(), key1, version2Value, version2Nonce, version2Timestamp,
 		)
 		if err != nil {
 			return err
@@ -278,25 +288,48 @@ func TestDBCreateDataRecordVersionDelete(t *testing.T) {
 	})
 	assert.Nil(err)
 
-	// ----- 9 – Get back test version 2. This should fail. -----
+	// ----- 9 – Get back test version 2. This should fail as not found. -----
 	err = uut.UseDatabaseInTransaction(utCtx, func(ctx context.Context, dbClient db.Database) error {
 		_, err := dbClient.GetRecordVersion(ctx, ver2.ID)
 		return err
 	})
-	assert.NotNil(err, "expected error when retrieving a version of a deleted record")
+	var notFound goutils.NotFoundError
+	assert.ErrorAs(err, &notFound, "expected not found when retrieving a version of a deleted record")
 
-	// ----- 10 – Delete test key 1 -----
+	// ----- 10 – Deleting test key 1 must fail while test version 1 still uses it -----
+	err = uut.UseDatabaseInTransaction(utCtx, func(ctx context.Context, dbClient db.Database) error {
+		return dbClient.DeleteEncryptionKey(ctx, key1.ID)
+	})
+	assert.Error(err, "deleting an encryption key still in use must be refused")
+
+	// ----- 11 – Test version 1 is untouched by the refused delete -----
+	err = uut.UseDatabaseInTransaction(utCtx, func(ctx context.Context, dbClient db.Database) error {
+		v, err := dbClient.GetRecordVersion(ctx, ver1.ID)
+		if err != nil {
+			return err
+		}
+		assert.Equal(key1.ID, v.EncKeyID)
+		assert.Equal(version1Value, v.EncValue)
+		return nil
+	})
+	assert.Nil(err, "a refused encryption key delete must not disturb the data it protects")
+
+	// ----- 12 – Once nothing references it, test key 1 can be deleted -----
+	err = uut.UseDatabaseInTransaction(utCtx, func(ctx context.Context, dbClient db.Database) error {
+		return dbClient.DeleteRecord(ctx, rec1.ID)
+	})
+	assert.Nil(err)
+
 	err = uut.UseDatabaseInTransaction(utCtx, func(ctx context.Context, dbClient db.Database) error {
 		return dbClient.DeleteEncryptionKey(ctx, key1.ID)
 	})
 	assert.Nil(err)
 
-	// ----- 11 – Get back test version 1. This should fail. -----
 	err = uut.UseDatabaseInTransaction(utCtx, func(ctx context.Context, dbClient db.Database) error {
-		_, err := dbClient.GetRecordVersion(ctx, ver1.ID)
+		_, err := dbClient.GetEncryptionKey(ctx, key1.ID)
 		return err
 	})
-	assert.NotNil(err, "expected error when retrieving a version of a deleted encryption key")
+	assert.ErrorAs(err, &notFound)
 }
 
 func TestDBListDataRecordVersion(t *testing.T) {
@@ -315,6 +348,9 @@ func TestDBListDataRecordVersion(t *testing.T) {
 
 	// Create database tables
 	assert.Nil(uut.RunSQLInTransaction(utCtx, db.DefineTables))
+
+	// The record data API is closed outside the READY state
+	markSystemReady(utCtx, t, uut)
 
 	// ----- 1 – Define two data records (test record 1 & 2) -----
 	var rec1, rec2 models.Record
@@ -347,7 +383,7 @@ func TestDBListDataRecordVersion(t *testing.T) {
 	key2Mat := []byte(uuid.NewString())
 
 	err = uut.UseDatabaseInTransaction(utCtx, func(ctx context.Context, dbClient db.Database) error {
-		ek, err := dbClient.RecordEncryptionKey(ctx, key1Mat)
+		ek, err := dbClient.RecordEncryptionKey(ctx, key1Mat, testKekID)
 		if err != nil {
 			return err
 		}
@@ -357,7 +393,7 @@ func TestDBListDataRecordVersion(t *testing.T) {
 	assert.Nil(err)
 
 	err = uut.UseDatabaseInTransaction(utCtx, func(ctx context.Context, dbClient db.Database) error {
-		ek, err := dbClient.RecordEncryptionKey(ctx, key2Mat)
+		ek, err := dbClient.RecordEncryptionKey(ctx, key2Mat, testKekID)
 		if err != nil {
 			return err
 		}
@@ -377,7 +413,9 @@ func TestDBListDataRecordVersion(t *testing.T) {
 		return newVersion, uut.UseDatabaseInTransaction(
 			utCtx, func(ctx context.Context, dbClient db.Database) error {
 				var err error
-				newVersion, err = dbClient.DefineNewVersionForRecord(ctx, rec, key, value, nonce, now)
+				newVersion, err = dbClient.DefineNewVersionForRecord(
+					ctx, rec, db.NewRecordVersionID(), key, value, nonce, now,
+				)
 				return err
 			},
 		)
@@ -508,4 +546,97 @@ func TestDBListDataRecordVersion(t *testing.T) {
 		return nil
 	})
 	assert.Nil(err)
+}
+
+// TestDBCountRecordVersions verifies the behaviour of CountRecordVersions, which sizes the
+// work an encryption key rotation still has ahead of it.
+func TestDBCountRecordVersions(t *testing.T) {
+	assert := assert.New(t)
+	log.SetLevel(log.DebugLevel)
+
+	utCtx := context.Background()
+	uut := newTestDBClient(utCtx, t)
+	markSystemReady(utCtx, t, uut)
+
+	// Two keys, and records split across them
+	var key1, key2 models.EncryptionKey
+	assert.Nil(uut.UseDatabaseInTransaction(
+		utCtx, func(ctx context.Context, dbClient db.Database) error {
+			var err error
+			if key1, err = dbClient.RecordEncryptionKey(
+				ctx, []byte(uuid.NewString()), testKekID,
+			); err != nil {
+				return err
+			}
+			key2, err = dbClient.RecordEncryptionKey(ctx, []byte(uuid.NewString()), testKekID)
+			return err
+		},
+	))
+
+	var recordA, recordB models.Record
+	assert.Nil(uut.UseDatabaseInTransaction(
+		utCtx, func(ctx context.Context, dbClient db.Database) error {
+			var err error
+			if recordA, err = dbClient.DefineNewRecord(ctx, uuid.NewString()); err != nil {
+				return err
+			}
+			recordB, err = dbClient.DefineNewRecord(ctx, uuid.NewString())
+			return err
+		},
+	))
+
+	// Three versions on recordA under key1, one on recordB under key2
+	newVersion := func(record models.Record, encKey models.EncryptionKey) {
+		assert.Nil(uut.UseDatabaseInTransaction(
+			utCtx, func(ctx context.Context, dbClient db.Database) error {
+				_, err := dbClient.DefineNewVersionForRecord(
+					ctx,
+					record,
+					db.NewRecordVersionID(),
+					encKey,
+					[]byte(uuid.NewString()),
+					[]byte(uuid.NewString()),
+					time.Now().UTC(),
+				)
+				return err
+			},
+		))
+	}
+	newVersion(recordA, key1)
+	newVersion(recordA, key1)
+	newVersion(recordA, key1)
+	newVersion(recordB, key2)
+
+	count := func(filters db.RecordVersionQueryFilter) int64 {
+		var total int64
+		assert.Nil(uut.UseDatabaseInTransaction(
+			utCtx, func(ctx context.Context, dbClient db.Database) error {
+				var err error
+				total, err = dbClient.CountRecordVersions(ctx, filters)
+				return err
+			},
+		))
+		return total
+	}
+
+	assert.EqualValues(4, count(db.RecordVersionQueryFilter{}))
+	assert.EqualValues(3, count(db.RecordVersionQueryFilter{TargetRecordID: &recordA.ID}))
+	assert.EqualValues(1, count(db.RecordVersionQueryFilter{TargetRecordID: &recordB.ID}))
+	assert.EqualValues(3, count(db.RecordVersionQueryFilter{TargetEncKeyID: &key1.ID}))
+	assert.EqualValues(1, count(db.RecordVersionQueryFilter{TargetEncKeyID: &key2.ID}))
+
+	// Both conditions together
+	assert.EqualValues(0, count(db.RecordVersionQueryFilter{
+		TargetRecordID: &recordB.ID, TargetEncKeyID: &key1.ID,
+	}))
+
+	// Paging is ignored: the count of one page is not a useful number
+	limit, offset := 2, 1
+	assert.EqualValues(4, count(db.RecordVersionQueryFilter{
+		CommonListEntryQueryFilter: db.CommonListEntryQueryFilter{Limit: &limit, Offset: &offset},
+	}))
+
+	// An unknown key matches nothing
+	unknown := uuid.NewString()
+	assert.EqualValues(0, count(db.RecordVersionQueryFilter{TargetEncKeyID: &unknown}))
 }

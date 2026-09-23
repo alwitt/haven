@@ -2,6 +2,7 @@
 CREATE TABLE "public"."encryption_keys" (
   "id" text NOT NULL,
   "enc_key_material" bytea NOT NULL,
+  "kek_id" text NOT NULL,
   "state" text NOT NULL,
   "created_at" timestamptz NULL,
   "updated_at" timestamptz NULL,
@@ -43,6 +44,6 @@ CREATE TABLE "public"."record_versions" (
   "created_at" timestamptz NULL,
   "updated_at" timestamptz NULL,
   CONSTRAINT "uni_record_versions_id" PRIMARY KEY ("id"),
-  CONSTRAINT "fk_record_versions_enc_key" FOREIGN KEY ("enc_key_id") REFERENCES "public"."encryption_keys" ("id") ON UPDATE NO ACTION ON DELETE CASCADE,
+  CONSTRAINT "fk_record_versions_enc_key" FOREIGN KEY ("enc_key_id") REFERENCES "public"."encryption_keys" ("id") ON UPDATE NO ACTION ON DELETE RESTRICT,
   CONSTRAINT "fk_record_versions_record" FOREIGN KEY ("record_id") REFERENCES "public"."records" ("id") ON UPDATE NO ACTION ON DELETE CASCADE
 );

@@ -37,3 +37,17 @@ type RecordVersion struct {
 	// UpdatedAt entry update timestamp
 	UpdatedAt time.Time `json:"updated_at"`
 }
+
+/*
+AssociatedData the AEAD associated data binding this version's cipher text to its row.
+
+The same value must be supplied when decrypting, so a cipher text moved to another
+record, version, or encryption key fails authentication. It is not stored.
+
+This is part of the on-disk format: changing it makes every existing version undecryptable.
+
+	@returns the associated data
+*/
+func (v RecordVersion) AssociatedData() []byte {
+	return []byte(v.RecordID + "|" + v.ID + "|" + v.EncKeyID)
+}

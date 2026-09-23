@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/oklog/ulid/v2"
 	"github.com/stretchr/testify/assert"
+	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 )
 
@@ -38,19 +39,34 @@ func TestProtectedKVStoreEndToEnd(t *testing.T) {
 	assert.Nil(dbClient.RunSQLInTransaction(ctx, db.DefineTables))
 
 	// ------------------------------------------------------------------
-	// 2. Load RSA key files
+	// 2. Load RSA key files, using a certificate that must verify against a CA chain
 	// ------------------------------------------------------------------
-	certFile, err := filepath.Abs("./test/ut_rsa.crt")
+	certFile, err := filepath.Abs("./test/certs/user-intermediate.crt")
 	assert.Nil(err)
-	keyFile, err := filepath.Abs("./test/ut_rsa.key")
+	keyFile, err := filepath.Abs("./test/certs/user-intermediate.key")
+	assert.Nil(err)
+	caCertFile, err := filepath.Abs("./test/certs/ca-chain.crt")
 	assert.Nil(err)
 
+	storeParams := haven.ProtectedKVStoreParams{
+		DBDialector:          db.GetSqliteDialector(testDB),
+		DBLogLevel:           logger.Error,
+		PrimaryRSACertFile:   certFile,
+		PrimaryRSAKeyFile:    keyFile,
+		PrimaryRSACACertFile: &caCertFile,
+		KeyCacheTTL:          time.Minute,
+	}
+
 	// ------------------------------------------------------------------
-	// 3. Create the protected KV store
+	// 3. Initialize the system, then create the protected KV store
 	// ------------------------------------------------------------------
-	store, err := haven.NewProtectedKVStore(
-		ctx, db.GetSqliteDialector(testDB), logger.Error, certFile, keyFile,
-	)
+	// The record data API is closed until a maintenance action mints the first encryption
+	// key and opens the system for normal operation.
+	runner, _, err := haven.NewMaintenanceRunner(ctx, storeParams, 0)
+	assert.Nil(err)
+	assert.Nil(runner.Initialize(ctx))
+
+	store, _, err := haven.NewProtectedKVStore(ctx, storeParams)
 	assert.Nil(err)
 
 	// ------------------------------------------------------------------
@@ -118,5 +134,120 @@ func TestProtectedKVStoreEndToEnd(t *testing.T) {
 	// 11. Attempt to list versions again – should fail
 	// ------------------------------------------------------------------
 	_, _, err = store.ListKeyVersions(ctx, keyName, nil)
+	assert.Error(err)
+}
+
+// TestProtectedKVStoreRowBinding verifies a version's cipher text is bound to its row.
+// It simulates an attacker with write access to the table by swapping the encrypted
+// value and nonce between rows with raw SQL, and expects decryption to fail afterwards.
+func TestProtectedKVStoreRowBinding(t *testing.T) {
+	assert := assert.New(t)
+	log.SetLevel(log.DebugLevel)
+
+	ctx := context.Background()
+
+	testDB := fmt.Sprintf("/tmp/haven_ut_%s.db", ulid.Make().String())
+	dbClient, err := db.NewConnection(db.GetSqliteDialector(testDB), logger.Error)
+	assert.Nil(err)
+	assert.Nil(dbClient.RunSQLInTransaction(ctx, db.DefineTables))
+
+	certFile, err := filepath.Abs("./test/certs/self-signed.crt")
+	assert.Nil(err)
+	keyFile, err := filepath.Abs("./test/certs/self-signed.key")
+	assert.Nil(err)
+
+	storeParams := haven.ProtectedKVStoreParams{
+		DBDialector:        db.GetSqliteDialector(testDB),
+		DBLogLevel:         logger.Error,
+		PrimaryRSACertFile: certFile,
+		PrimaryRSAKeyFile:  keyFile,
+		KeyCacheTTL:        time.Minute,
+	}
+
+	// The record data API is closed until a maintenance action opens the system
+	runner, _, err := haven.NewMaintenanceRunner(ctx, storeParams, 0)
+	assert.Nil(err)
+	assert.Nil(runner.Initialize(ctx))
+
+	store, _, err := haven.NewProtectedKVStore(ctx, storeParams)
+	assert.Nil(err)
+
+	// ------------------------------------------------------------------
+	// 1. Two versions of key A, one version of key B
+	// ------------------------------------------------------------------
+	valueA1 := []byte(uuid.NewString())
+	_, verA1, err := store.RecordKeyValue(ctx, "keyA", valueA1, time.Now(), nil)
+	assert.Nil(err)
+	valueA2 := []byte(uuid.NewString())
+	_, verA2, err := store.RecordKeyValue(ctx, "keyA", valueA2, time.Now(), nil)
+	assert.Nil(err)
+	valueB1 := []byte(uuid.NewString())
+	_, verB1, err := store.RecordKeyValue(ctx, "keyB", valueB1, time.Now(), nil)
+	assert.Nil(err)
+
+	for _, entry := range []struct {
+		versionID string
+		value     []byte
+	}{
+		{versionID: verA1.ID, value: valueA1},
+		{versionID: verA2.ID, value: valueA2},
+		{versionID: verB1.ID, value: valueB1},
+	} {
+		retrieved, err := store.GetValueOfKeyAtVersionID(ctx, entry.versionID, nil)
+		assert.Nil(err)
+		assert.Equal(entry.value, retrieved)
+	}
+
+	// swapVersionPayload exchanges the encrypted value and nonce between two version rows
+	swapVersionPayload := func(versionID1, versionID2 string) error {
+		return dbClient.RunSQLInTransaction(ctx, func(_ context.Context, tx *gorm.DB) error {
+			var rows []struct {
+				ID       string
+				EncValue []byte
+				EncNonce []byte
+			}
+			if err := tx.Table("record_versions").
+				Select("id", "enc_value", "enc_nonce").
+				Where("id IN ?", []string{versionID1, versionID2}).
+				Find(&rows).Error; err != nil {
+				return err
+			}
+			if len(rows) != 2 {
+				return fmt.Errorf("expected 2 rows, found %d", len(rows))
+			}
+			for i := range 2 {
+				other := rows[1-i]
+				if err := tx.Table("record_versions").
+					Where("id = ?", rows[i].ID).
+					Updates(map[string]any{
+						"enc_value": other.EncValue, "enc_nonce": other.EncNonce,
+					}).Error; err != nil {
+					return err
+				}
+			}
+			return nil
+		})
+	}
+
+	// ------------------------------------------------------------------
+	// 2. Swap payloads between two versions of the same key
+	// ------------------------------------------------------------------
+	assert.Nil(swapVersionPayload(verA1.ID, verA2.ID))
+	_, err = store.GetValueOfKeyAtVersionID(ctx, verA1.ID, nil)
+	assert.Error(err)
+	_, err = store.GetValueOfKeyAtVersionID(ctx, verA2.ID, nil)
+	assert.Error(err)
+	// Untouched row still reads
+	retrieved, err := store.GetValueOfKeyAtVersionID(ctx, verB1.ID, nil)
+	assert.Nil(err)
+	assert.Equal(valueB1, retrieved)
+
+	// ------------------------------------------------------------------
+	// 3. Swap payloads between versions of different keys
+	// ------------------------------------------------------------------
+	assert.Nil(swapVersionPayload(verA1.ID, verB1.ID))
+	_, err = store.GetValueOfKeyAtVersionID(ctx, verA1.ID, nil)
+	assert.Error(err)
+	_, err = store.GetValueOfKeyAtVersionID(ctx, verB1.ID, nil)
 	assert.Error(err)
 }

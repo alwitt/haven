@@ -11,13 +11,25 @@ import (
 type SystemStateENUMType string
 
 const (
-	// SystemStatePreInit first time system start
+	// SystemStatePreInit no encryption key exists yet; the system has never been initialized
 	SystemStatePreInit SystemStateENUMType = "PRE_INITIALIZATION"
-	// SystemStateInit system perform first time initialization
-	SystemStateInit SystemStateENUMType = "INITIALIZING"
-	// SystemStateRunning system running normally
-	SystemStateRunning SystemStateENUMType = "RUNNING"
+	// SystemStateReady exactly one active encryption key; normal operation
+	SystemStateReady SystemStateENUMType = "READY"
+	// SystemStateDEKRotating an encryption key rotation is underway or was interrupted
+	SystemStateDEKRotating SystemStateENUMType = "DEK_ROTATION_IN_PROGRESS"
+	// SystemStateKEKRotating a primary RSA key pair rotation is underway or was interrupted
+	SystemStateKEKRotating SystemStateENUMType = "KEK_ROTATION_IN_PROGRESS"
 )
+
+// Values all valid SystemStateENUMType values
+func (SystemStateENUMType) Values() []SystemStateENUMType {
+	return []SystemStateENUMType{
+		SystemStatePreInit,
+		SystemStateReady,
+		SystemStateDEKRotating,
+		SystemStateKEKRotating,
+	}
+}
 
 // SystemParams system operating parameters
 type SystemParams struct {
@@ -38,14 +50,20 @@ func (p *SystemParams) ValidateNextState(newState SystemStateENUMType) error {
 	statesWithTransitions := map[SystemStateENUMType]map[SystemStateENUMType]bool{
 		SystemStatePreInit: {
 			SystemStatePreInit: true,
-			SystemStateInit:    true,
+			SystemStateReady:   true,
 		},
-		SystemStateInit: {
-			SystemStateInit:    true,
-			SystemStateRunning: true,
+		SystemStateReady: {
+			SystemStateReady:       true,
+			SystemStateDEKRotating: true,
+			SystemStateKEKRotating: true,
 		},
-		SystemStateRunning: {
-			SystemStateRunning: true,
+		SystemStateDEKRotating: {
+			SystemStateDEKRotating: true,
+			SystemStateReady:       true,
+		},
+		SystemStateKEKRotating: {
+			SystemStateKEKRotating: true,
+			SystemStateReady:       true,
 		},
 	}
 

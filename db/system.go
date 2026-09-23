@@ -2,6 +2,8 @@ package db
 
 import (
 	"context"
+	"fmt"
+	"time"
 
 	"github.com/alwitt/goutils"
 	"github.com/alwitt/haven/models"
@@ -17,7 +19,7 @@ func (d *databaseImpl) getSystemParamEntry() (SystemParamsDBEntry, error) {
 	var entries []SystemParamsDBEntry
 	dbErr := d.db.Where("id = ?", GlobalSystemParamEntryID).Find(&entries).Error
 	if dbErr != nil {
-		return SystemParamsDBEntry{}, models.NewSQLError(
+		return SystemParamsDBEntry{}, goutils.NewSQLError(
 			"failed to read system params table", dbErr, true,
 		)
 	}
@@ -30,7 +32,7 @@ func (d *databaseImpl) getSystemParamEntry() (SystemParamsDBEntry, error) {
 			},
 		}
 		if dbErr = d.db.Create(&newEntry).Error; dbErr != nil {
-			return SystemParamsDBEntry{}, models.NewSQLError(
+			return SystemParamsDBEntry{}, goutils.NewSQLError(
 				"failed to setup singleton system params table", dbErr, true,
 			)
 		}
@@ -55,7 +57,31 @@ func (d *databaseImpl) GetSystemParamEntry(_ context.Context) (models.SystemPara
 	return entry.SystemParams, nil
 }
 
+// stateChangeAuditEvent select the audit event recording a particular state transition.
+//
+// The second return value reports whether the transition is worth recording.
+func stateChangeAuditEvent(
+	oldState, newState models.SystemStateENUMType,
+) (models.SystemEventTypeENUMType, bool) {
+	switch {
+	case oldState == models.SystemStatePreInit && newState == models.SystemStateReady:
+		return models.SystemEventTypeInitialized, true
+	case newState == models.SystemStateDEKRotating:
+		return models.SystemEventTypeDEKRotationStarted, true
+	case oldState == models.SystemStateDEKRotating && newState == models.SystemStateReady:
+		return models.SystemEventTypeDEKRotationCompleted, true
+	case newState == models.SystemStateKEKRotating:
+		return models.SystemEventTypeKEKRotationStarted, true
+	case oldState == models.SystemStateKEKRotating && newState == models.SystemStateReady:
+		return models.SystemEventTypeKEKRotationCompleted, true
+	}
+	return "", false
+}
+
 // updateSystemParamState update the system parameter entry with new state
+//
+// The write is conditional on the entry still holding the state this call read, so a
+// concurrent transition is reported rather than overwritten.
 func (d *databaseImpl) updateSystemParamState(newState models.SystemStateENUMType) error {
 	entry, err := d.getSystemParamEntry()
 	if err != nil {
@@ -72,29 +98,28 @@ func (d *databaseImpl) updateSystemParamState(newState models.SystemStateENUMTyp
 	}
 
 	oldState := entry.State
-	entry.State = newState
-	if tmp := d.db.Updates(&entry); tmp.Error != nil {
-		return models.NewSQLError("system state change update failed", tmp.Error, true)
+	tmp := d.db.
+		Model(&SystemParamsDBEntry{}).
+		Where("id = ? AND state = ?", GlobalSystemParamEntryID, oldState).
+		Updates(map[string]interface{}{"state": newState, "updated_at": time.Now().UTC()})
+	if tmp.Error != nil {
+		return goutils.NewSQLError("system state change update failed", tmp.Error, true)
+	}
+	if tmp.RowsAffected == 0 {
+		return goutils.NewConsistencyError(
+			fmt.Sprintf(
+				"system is no longer in state '%s'; can't transition to '%s'", oldState, newState,
+			),
+			nil, true,
+		)
 	}
 
 	// record this event
-	switch newState {
-	case models.SystemStateInit:
-		_, err = d.defineNewSystemEvent(models.SystemEventTypeInitializing, nil)
-		if err != nil {
+	if eventType, record := stateChangeAuditEvent(oldState, newState); record {
+		if _, err := d.defineNewSystemEvent(eventType, nil); err != nil {
 			return goutils.NewRuntimeError(
 				"failed to log system state change audit event", err, true,
 			)
-		}
-
-	case models.SystemStateRunning:
-		if oldState == models.SystemStateInit {
-			_, err = d.defineNewSystemEvent(models.SystemEventTypeInitialized, nil)
-			if err != nil {
-				return goutils.NewRuntimeError(
-					"failed to log system state change audit event", err, true,
-				)
-			}
 		}
 	}
 
@@ -102,19 +127,28 @@ func (d *databaseImpl) updateSystemParamState(newState models.SystemStateENUMTyp
 }
 
 /*
-MarkSystemInitializing mark system is initializing
+MarkSystemReady mark the system ready for normal operation
 
 	@param ctx context.Context - execution context
 */
-func (d *databaseImpl) MarkSystemInitializing(_ context.Context) error {
-	return d.updateSystemParamState(models.SystemStateInit)
+func (d *databaseImpl) MarkSystemReady(_ context.Context) error {
+	return d.updateSystemParamState(models.SystemStateReady)
 }
 
 /*
-MarkSystemInitializing mark system fully initialized
+MarkSystemRotatingDEK mark an encryption key rotation in progress
 
 	@param ctx context.Context - execution context
 */
-func (d *databaseImpl) MarkSystemInitialized(_ context.Context) error {
-	return d.updateSystemParamState(models.SystemStateRunning)
+func (d *databaseImpl) MarkSystemRotatingDEK(_ context.Context) error {
+	return d.updateSystemParamState(models.SystemStateDEKRotating)
+}
+
+/*
+MarkSystemRotatingKEK mark a primary RSA key pair rotation in progress
+
+	@param ctx context.Context - execution context
+*/
+func (d *databaseImpl) MarkSystemRotatingKEK(_ context.Context) error {
+	return d.updateSystemParamState(models.SystemStateKEKRotating)
 }

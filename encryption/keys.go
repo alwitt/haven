@@ -1,10 +1,13 @@
 package encryption
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/alwitt/cgoutils/crypto"
+	"github.com/alwitt/goutils"
 	"github.com/alwitt/haven/db"
 	"github.com/alwitt/haven/models"
 )
@@ -19,9 +22,6 @@ NewEncryptionKey define a new encryption symmetric encryption key
 func (e *cryptoEngine) NewEncryptionKey(
 	ctx context.Context, activeDBClient db.Database,
 ) (models.EncryptionKey, error) {
-	// RNG for generating the key
-	rng := e.crypto.GetRNGReader()
-
 	aead, err := e.crypto.GetAEAD(ctx, crypto.AEADTypeXChaCha20Poly1305)
 	if err != nil {
 		return models.EncryptionKey{}, models.NewEncryptionError("unable to define AEAD client", err, true)
@@ -29,19 +29,22 @@ func (e *cryptoEngine) NewEncryptionKey(
 
 	keyLen := aead.ExpectedKeyLen()
 
-	newKey := make([]byte, keyLen)
-	if n, err := rng.Read(newKey); err != nil {
+	// Draw the key directly into secure memory
+	newKey, err := e.crypto.GetRandomBuf(ctx, keyLen)
+	if err != nil {
 		return models.EncryptionKey{}, models.NewEncryptionError(
-			fmt.Sprintf("failed to read %d bytes from RNG", keyLen), err, true,
+			fmt.Sprintf("failed to generate %d byte key", keyLen), err, true,
 		)
-	} else if n != keyLen {
+	}
+	newKeyView, err := newKey.GetSlice()
+	if err != nil {
 		return models.EncryptionKey{}, models.NewEncryptionError(
-			fmt.Sprintf("did not get %d bytes from RNG, only %d", keyLen, n), nil, true,
+			"failed to access new key buffer core", err, true,
 		)
 	}
 
 	// Encrypt the key for storage
-	newKeyEnc, err := e.crypto.RSAEncrypt(ctx, newKey, e.rsaPubKey, nil)
+	newKeyEnc, err := e.crypto.RSAEncrypt(ctx, newKeyView, e.kek.publicKey, nil)
 	if err != nil {
 		return models.EncryptionKey{}, models.NewEncryptionError(
 			"failed to encrypt symmetric enc key", err, true,
@@ -52,9 +55,9 @@ func (e *cryptoEngine) NewEncryptionKey(
 	var keyEntry models.EncryptionKey
 	if dbErr := db.ActiveSessionWrapper(
 		ctx, activeDBClient, e.persistence, func(dbCtx context.Context, dbClient db.Database) error {
-			keyEntry, err = dbClient.RecordEncryptionKey(dbCtx, newKeyEnc)
+			keyEntry, err = dbClient.RecordEncryptionKey(dbCtx, newKeyEnc, e.kek.ID())
 			if err != nil {
-				return models.NewPersistenceError("failed to record encryption key", err, true)
+				return goutils.NewPersistenceError("failed to record encryption key", err, true)
 			}
 			return nil
 		},
@@ -70,11 +73,19 @@ func (e *cryptoEngine) NewEncryptionKey(
 	return keyEntry, nil
 }
 
-// writeKeyToCache write key into cache for use
-func (e *cryptoEngine) writeKeyToCache(keyEntry models.EncryptionKey, plainKey []byte) {
+// writeKeyToCache write key into cache for use, trusted for the configured TTL
+func (e *cryptoEngine) writeKeyToCache(
+	keyEntry models.EncryptionKey, plainKey crypto.SecureCSlice,
+) encKeyCacheEntry {
+	entry := encKeyCacheEntry{
+		EncryptionKey: keyEntry,
+		plainTextKey:  plainKey,
+		expiresAt:     time.Now().UTC().Add(e.keyCacheTTL),
+	}
 	e.keyCacheLock.Lock()
 	defer e.keyCacheLock.Unlock()
-	e.encKeys[keyEntry.ID] = encKeyCacheEntry{EncryptionKey: keyEntry, plainTextKey: plainKey}
+	e.encKeys[keyEntry.ID] = entry
+	return entry
 }
 
 // getCachedKey helper function to read a key from cache
@@ -85,47 +96,93 @@ func (e *cryptoEngine) getCachedKey(keyID string) (encKeyCacheEntry, bool) {
 	return entry, ok
 }
 
+// cacheKey record an encryption key entry in the cache. A key which can still decrypt is
+// cached; one which cannot evicts any existing entry.
+//
+// Retired keys are cached deliberately: an encryption key rotation decrypts under the
+// retired key for every version it moves, so evicting it would cost an RSA unwrap per row.
+//
+// If the key is already cached and its wrapped key material is unchanged, the decrypted
+// key is reused and only the metadata and TTL are refreshed.
 func (e *cryptoEngine) cacheKey(
 	ctx context.Context, keyEntry models.EncryptionKey,
 ) (encKeyCacheEntry, error) {
-	// Only cache active keys
-	if keyEntry.State != models.EncryptionKeyStateActive {
+	if !keyEntry.State.CanDecrypt() {
+		e.uncacheKey(keyEntry.ID)
 		return encKeyCacheEntry{EncryptionKey: keyEntry}, nil
 	}
 
-	// Decrypt the key
-	key, err := e.crypto.RSADecrypt(ctx, keyEntry.EncKeyMaterial, e.rsaKey, nil)
+	// Reuse the already decrypted key when possible
+	{
+		existing, ok := e.getCachedKey(keyEntry.ID)
+		if ok &&
+			existing.plainTextKey != nil &&
+			bytes.Equal(existing.EncKeyMaterial, keyEntry.EncKeyMaterial) {
+			return e.writeKeyToCache(keyEntry, existing.plainTextKey), nil
+		}
+	}
+
+	// Decrypt the key, and move it into secure memory
+	rawKey, err := e.crypto.RSADecrypt(ctx, keyEntry.EncKeyMaterial, e.kek.privateKey, nil)
 	if err != nil {
 		return encKeyCacheEntry{EncryptionKey: keyEntry}, models.NewEncryptionError(
 			fmt.Sprintf("failed to decrypt symmetric key %s", keyEntry.ID), err, true,
 		)
 	}
+	defer clear(rawKey)
 
-	// Cache the key and its DB entry
-	e.writeKeyToCache(keyEntry, key)
+	key, err := e.crypto.AllocateSecureCSlice(len(rawKey))
+	if err != nil {
+		return encKeyCacheEntry{EncryptionKey: keyEntry}, models.NewEncryptionError(
+			fmt.Sprintf("failed to allocate secure buffer for key %s", keyEntry.ID), err, true,
+		)
+	}
+	keyCore, err := key.GetSlice()
+	if err != nil {
+		return encKeyCacheEntry{EncryptionKey: keyEntry}, models.NewEncryptionError(
+			fmt.Sprintf("failed to access secure buffer core for key %s", keyEntry.ID), err, true,
+		)
+	}
+	if copied := copy(keyCore, rawKey); copied != len(rawKey) {
+		return encKeyCacheEntry{EncryptionKey: keyEntry}, models.NewEncryptionError(
+			fmt.Sprintf(
+				"failed to fill secure buffer for key %s %d =/= %d", keyEntry.ID, copied, len(rawKey),
+			),
+			nil, true,
+		)
+	}
 
-	return encKeyCacheEntry{EncryptionKey: keyEntry, plainTextKey: key}, nil
+	return e.writeKeyToCache(keyEntry, key), nil
 }
 
 // uncacheKey remove a key from cache
+//
+// The secure buffer is not zeroed here: an in-flight AEAD operation may still hold a
+// reference to it. libsodium zeroes and frees the buffer once the last reference is gone.
 func (e *cryptoEngine) uncacheKey(keyID string) {
-	// Delete the key from cache
 	e.keyCacheLock.Lock()
 	defer e.keyCacheLock.Unlock()
 	delete(e.encKeys, keyID)
 }
 
 // getEncryptionKey core function for fetching on encryption key
+//
+// A cached entry within its TTL is returned as is. Otherwise the key is re-read from
+// persistence and the cache refreshed.
 func (e *cryptoEngine) getEncryptionKey(
 	ctx context.Context, keyID string, activeDBClient db.Database,
 ) (encKeyCacheEntry, error) {
+	if cached, ok := e.getCachedKey(keyID); ok && time.Now().UTC().Before(cached.expiresAt) {
+		return cached, nil
+	}
+
 	var keyEntry models.EncryptionKey
 	if dbErr := db.ActiveSessionWrapper(
 		ctx, activeDBClient, e.persistence, func(dbCtx context.Context, dbClient db.Database) error {
 			var err error
 			keyEntry, err = dbClient.GetEncryptionKey(dbCtx, keyID)
 			if err != nil {
-				return models.NewPersistenceError(
+				return goutils.NewPersistenceError(
 					fmt.Sprintf("failed to fetch encryption key %s", keyID), err, true,
 				)
 			}
@@ -137,24 +194,13 @@ func (e *cryptoEngine) getEncryptionKey(
 		)
 	}
 
-	// Inactive keys are not cached
-	if keyEntry.State != models.EncryptionKeyStateActive {
-		return encKeyCacheEntry{EncryptionKey: keyEntry}, nil
+	entry, err := e.cacheKey(ctx, keyEntry)
+	if err != nil {
+		return encKeyCacheEntry{}, models.NewEncryptionError(
+			fmt.Sprintf("unable to cache encryption key %s", keyID), err, true,
+		)
 	}
-
-	var plainKey encKeyCacheEntry
-	cached := false
-	var err error
-
-	// Check key has been cached already
-	if plainKey, cached = e.getCachedKey(keyID); !cached {
-		if plainKey, err = e.cacheKey(ctx, keyEntry); err != nil {
-			return encKeyCacheEntry{}, models.NewEncryptionError(
-				fmt.Sprintf("unable to cache encryption key %s", keyID), err, true,
-			)
-		}
-	}
-	return plainKey, nil
+	return entry, nil
 }
 
 /*
@@ -189,7 +235,7 @@ func (e *cryptoEngine) ListEncryptionKeys(
 			var err error
 			keyEntries, err = dbClient.ListEncryptionKeys(dbCtx, filters)
 			if err != nil {
-				return models.NewPersistenceError("failed to list encryption keys", err, true)
+				return goutils.NewPersistenceError("failed to list encryption keys", err, true)
 			}
 			return nil
 		},
@@ -197,136 +243,14 @@ func (e *cryptoEngine) ListEncryptionKeys(
 		return nil, models.NewEncryptionError("failed to list encryption keys", dbErr, true)
 	}
 
-	// Check keys have been cached already
+	// Refresh the cache with the listed keys
 	for _, entry := range keyEntries {
-		if entry.State == models.EncryptionKeyStateActive {
-			if _, cached := e.getCachedKey(entry.ID); !cached {
-				if _, err := e.cacheKey(ctx, entry); err != nil {
-					return nil, models.NewEncryptionError(
-						fmt.Sprintf("unable to cache encryption key %s", entry.ID), err, true,
-					)
-				}
-			}
-		} else {
-			e.uncacheKey(entry.ID)
+		if _, err := e.cacheKey(ctx, entry); err != nil {
+			return nil, models.NewEncryptionError(
+				fmt.Sprintf("unable to cache encryption key %s", entry.ID), err, true,
+			)
 		}
 	}
 
 	return keyEntries, nil
-}
-
-/*
-MarkEncryptionKeyActive mark encryption key is active
-
-	@param ctx context.Context - execution context
-	@param keyID string - the encryption key ID
-	@param activeDBClient Database - existing database transaction
-	@return key entry
-*/
-func (e *cryptoEngine) MarkEncryptionKeyActive(
-	ctx context.Context, keyID string, activeDBClient db.Database,
-) (models.EncryptionKey, error) {
-	var keyEntry models.EncryptionKey
-	if dbErr := db.ActiveSessionWrapper(
-		ctx, activeDBClient, e.persistence, func(dbCtx context.Context, dbClient db.Database) error {
-			var err error
-			if err = dbClient.MarkEncryptionKeyActive(dbCtx, keyID); err != nil {
-				return models.NewPersistenceError(
-					fmt.Sprintf("failed to mark encryption key %s active", keyID), err, true,
-				)
-			}
-			keyEntry, err = dbClient.GetEncryptionKey(dbCtx, keyID)
-			if err != nil {
-				return models.NewPersistenceError(
-					fmt.Sprintf("failed to fetch encryption key %s", keyID), err, true,
-				)
-			}
-			// Update the entry in cache
-			if _, err := e.cacheKey(ctx, keyEntry); err != nil {
-				return models.NewEncryptionError(
-					fmt.Sprintf("unable to cache encryption key %s", keyEntry.ID), err, true,
-				)
-			}
-			return nil
-		},
-	); dbErr != nil {
-		return models.EncryptionKey{}, models.NewEncryptionError(
-			fmt.Sprintf("failed to activate encryption key %s", keyID), dbErr, true,
-		)
-	}
-
-	return keyEntry, nil
-}
-
-/*
-MarkEncryptionKeyInactive mark encryption key is inactive
-
-	@param ctx context.Context - execution context
-	@param keyID string - the encryption key ID
-	@param activeDBClient Database - existing database transaction
-	@return key entry
-*/
-func (e *cryptoEngine) MarkEncryptionKeyInactive(
-	ctx context.Context, keyID string, activeDBClient db.Database,
-) (models.EncryptionKey, error) {
-	var keyEntry models.EncryptionKey
-	if dbErr := db.ActiveSessionWrapper(
-		ctx, activeDBClient, e.persistence, func(dbCtx context.Context, dbClient db.Database) error {
-			var err error
-			if err = dbClient.MarkEncryptionKeyInactive(dbCtx, keyID); err != nil {
-				return models.NewPersistenceError(
-					fmt.Sprintf("failed to mark encryption key %s inactive", keyID), err, true,
-				)
-			}
-			keyEntry, err = dbClient.GetEncryptionKey(dbCtx, keyID)
-			if err != nil {
-				return models.NewPersistenceError(
-					fmt.Sprintf("failed to fetch encryption key %s", keyID), err, true,
-				)
-			}
-			return nil
-		},
-	); dbErr != nil {
-		return models.EncryptionKey{}, models.NewEncryptionError(
-			fmt.Sprintf("failed to deactivate encryption key %s", keyID), dbErr, true,
-		)
-	}
-
-	// Delete the key from cache
-	e.uncacheKey(keyEntry.ID)
-
-	return keyEntry, nil
-}
-
-/*
-DeleteEncryptionKey delete encryption key
-
-	@param ctx context.Context - execution context
-	@param keyID string - the encryption key ID
-	@param activeDBClient Database - existing database transaction
-*/
-func (e *cryptoEngine) DeleteEncryptionKey(
-	ctx context.Context, keyID string, activeDBClient db.Database,
-) error {
-	if dbErr := db.ActiveSessionWrapper(
-		ctx, activeDBClient, e.persistence, func(dbCtx context.Context, dbClient db.Database) error {
-			if err := dbClient.DeleteEncryptionKey(dbCtx, keyID); err != nil {
-				return models.NewPersistenceError(
-					fmt.Sprintf("failed to delete encryption key %s", keyID), err, true,
-				)
-			}
-			return nil
-		},
-	); dbErr != nil {
-		return models.NewEncryptionError(
-			fmt.Sprintf("failed to delete encryption key %s", keyID), dbErr, true,
-		)
-	}
-
-	// Delete the key from cache
-	e.keyCacheLock.Lock()
-	defer e.keyCacheLock.Unlock()
-	delete(e.encKeys, keyID)
-
-	return nil
 }

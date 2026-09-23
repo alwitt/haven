@@ -12,11 +12,33 @@ import (
 type EncryptionKeyStateENUMType string
 
 const (
-	// EncryptionKeyStateActive the encryption key is active
+	// EncryptionKeyStateActive the encryption key encrypts new data, and decrypts
 	EncryptionKeyStateActive EncryptionKeyStateENUMType = "ACTIVE"
-	// EncryptionKeyStateInactive the encryption key is inactive
-	EncryptionKeyStateInactive EncryptionKeyStateENUMType = "INACTIVE"
+	// EncryptionKeyStateRetired the encryption key only decrypts. A key is retired while a
+	// rotation moves the data it protects onto the new active key.
+	EncryptionKeyStateRetired EncryptionKeyStateENUMType = "RETIRED"
 )
+
+// Values all valid EncryptionKeyStateENUMType values
+func (EncryptionKeyStateENUMType) Values() []EncryptionKeyStateENUMType {
+	return []EncryptionKeyStateENUMType{
+		EncryptionKeyStateActive,
+		EncryptionKeyStateRetired,
+	}
+}
+
+// CanEncrypt whether a key in this state may encrypt new data
+func (s EncryptionKeyStateENUMType) CanEncrypt() bool {
+	return s == EncryptionKeyStateActive
+}
+
+// CanDecrypt whether a key in this state may decrypt existing data
+//
+// A retired key still decrypts: it is the state a key occupies while a rotation moves the
+// data it protects onto the new active key, and that rotation must read that data.
+func (s EncryptionKeyStateENUMType) CanDecrypt() bool {
+	return s == EncryptionKeyStateActive || s == EncryptionKeyStateRetired
+}
 
 // EncryptionKey an encryption key used to encrypt record value
 //
@@ -27,6 +49,11 @@ type EncryptionKey struct {
 
 	// EncKeyMaterial the encrypted encryption key material
 	EncKeyMaterial []byte `json:"enc_key_material" gorm:"column:enc_key_material;not null" validate:"required"`
+
+	// KekID identifies the primary RSA key pair which encrypted EncKeyMaterial. It is the
+	// hex SHA-256 of that public key's SPKI DER, so it survives certificate renewal and
+	// changes only when the key pair itself does.
+	KekID string `json:"kek_id" gorm:"column:kek_id;not null" validate:"required"`
 
 	// State the encryption key state
 	State EncryptionKeyStateENUMType `json:"state" gorm:"column:state;not null" validate:"required,enc_key_state"`
@@ -39,14 +66,15 @@ type EncryptionKey struct {
 
 // ValidateNextState verify can transition to new state
 func (e *EncryptionKey) ValidateNextState(newState EncryptionKeyStateENUMType) error {
+	// Retirement is one way: a rotation always mints a new key, so a retired key is never
+	// brought back into service.
 	statesWithTransitions := map[EncryptionKeyStateENUMType]map[EncryptionKeyStateENUMType]bool{
 		EncryptionKeyStateActive: {
-			EncryptionKeyStateActive:   true,
-			EncryptionKeyStateInactive: true,
+			EncryptionKeyStateActive:  true,
+			EncryptionKeyStateRetired: true,
 		},
-		EncryptionKeyStateInactive: {
-			EncryptionKeyStateInactive: true,
-			EncryptionKeyStateActive:   true,
+		EncryptionKeyStateRetired: {
+			EncryptionKeyStateRetired: true,
 		},
 	}
 
